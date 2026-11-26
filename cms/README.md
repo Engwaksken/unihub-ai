@@ -2,9 +2,22 @@
 
 Laravel 13 staff portal for the Unihub Central AI platform (ADR 0001, D11/D12). It runs on cPanel shared hosting with MariaDB. It never stores projects, keys or quotas: those live in the gateway and are read and changed through the gateway management API (`docs/api/management-auth.md`).
 
-**P1 scope built here:** staff authentication with mandatory TOTP MFA, roles and project memberships, the permission matrix, the bootstrap-owner command, invitations, the users page, the CMS audit trail, the Ed25519 actor-assertion signer, `GatewayClient`, and the Organizations and Projects pages. Other modules (Overview, API keys, Models & tasks, Jobs, Usage, Server & alerts, Settings, and the project tabs other than Settings) stay hidden behind feature flags until they are built.
+**Built (P1 + P3):** staff authentication with mandatory TOTP MFA, roles and project memberships, the permission matrix, bootstrap-owner and invitations, the users page, the Ed25519 actor-assertion signer and `GatewayClient`, and every dashboard module:
+- Overview
+- Organizations
+- Projects, with tabs for API keys, Jobs, Usage and Settings
+- API keys
+- Models & tasks
+- Jobs & queue
+- Usage & reports
+- Server & alerts
+- Users & audit (merged CMS and gateway audit)
+- Settings
+- the scheduled alert e-mail notifier
 
-Pinned versions (see `composer.lock` / `package-lock.json`): laravel/framework 13.44.1, laravel/fortify 1.44.0, livewire/livewire 4.4.10, vite 8.3.8, @fontsource/poppins 5.3.0. PHP ≥ 8.3 with `sodium`, `pdo_mysql`, `intl`, `mbstring`, `openssl` and `fileinfo`.
+Each module has a feature flag in `config/cms.php` (`CMS_FEATURE_*`, all on by default). Turning one off hides the module and makes its routes return 404.
+
+Pinned versions (see `composer.lock` / `package-lock.json`): laravel/framework 13.44.1, laravel/fortify 1.44.0, livewire/livewire 4.4.10, vite 8.3.8, chart.js 4.6.2, @fontsource/poppins 5.3.0. PHP ≥ 8.3 with `sodium`, `pdo_mysql`, `intl`, `mbstring`, `openssl` and `fileinfo`.
 
 ## Local setup
 
@@ -78,6 +91,55 @@ Metadata keys that look like secrets (password, token, secret, code, …) are dr
 
 - Config lives in `config/services.php` → `gateway`, read from env `GATEWAY_MGMT_URL` (including `/internal/v1`), `GATEWAY_MGMT_TOKEN` and `CMS_ASSERTION_SECRET_KEY_PATH`.
 
+### Dashboard modules (P3)
+All data comes live from the gateway management API; nothing is copied into the CMS database.
+- Missing or old telemetry renders as **Unknown** or **Stale**, never 0.
+- Token counts the model did not report render as **n/a**.
+- Every chart (Chart.js, bundled by Vite) has a data table next to it.
+
+| Module | Gateway calls | Notes |
+|---|---|---|
+| Overview | `GET /summary` (cached 30 s per actor scope) | The date range is converted from Kampala days to UTC instants. The gateway's `requests_today` and trend days are UTC days, and the page says so. |
+| Project → API keys | `GET/POST /projects/{id}/keys`, `POST /keys/{id}/revoke` | See "API key secrets" below. Rotate sends `rotates_key_id` and `overlap_days` (0–30). Revoke is behind a confirmation dialog. |
+| API keys (menu) | `GET /projects`, then one `GET /projects/{id}/keys` per project | The gateway has no cross-project key listing, so the page goes through visible projects 10 at a time (at most 11 calls per page). Keys are managed on each project's tab. |
+| Models & tasks | `GET /models`, `POST /models/refresh`, `PATCH /models/{id}`, `GET/POST /tasks`, `POST /tasks/{key}/versions/{v}/publish` | Enabling a model requires a licence. Templates are shown escaped in `<pre>`. Only drafts can be published, behind a confirmation dialog. There are no pull, delete or shell actions. |
+| Jobs & queue (and project tab) | `GET /jobs`, `POST /jobs/{id}/cancel`, `POST /jobs/{id}/retry` | Metadata only. Cancelling a queued job needs confirmation. Retrying a failed job needs a reason; the gateway decides eligibility, and its 409 shows as a form error. |
+| Usage & reports (and project tab) | `GET /usage` with `tz=` set to the display zone, `GET /usage?format=csv` | The CSV is the gateway's own file, streamed through. The `project_id` filter is checked against the user's scope (404 otherwise). Without a filter, the gateway scopes by the assertion. Cost is labelled **estimate**. |
+| Server & alerts | `GET /health` (cached 30 s), `GET /alerts`, `POST /alerts/{id}/ack`, `PUT /admission` | Pausing or resuming admission needs a reason and confirmation. Owners and ops admins get admission state from `/settings`; auditors get it from `/summary`. The page also shows the CMS's own "gateway unreachable" alert. |
+| Audit | CMS `audit_events` plus `GET /audit` (and `format=csv`) | Each row is labelled CMS or Gateway. "All sources" merges the newest 50 events of each; pick one source to page further. The CSV combines both sources, scoped to the user, with formula cells neutralised. |
+| Settings | `GET/PATCH /settings` | See "Settings" below. |
+
+**API key secrets.** A new key's secret is rendered **once**, in the response to the POST, with `Cache-Control: no-store`. It is never redirected, flashed, logged or stored. Re-submitting the form reuses its Idempotency-Key, so the gateway answers `IDEMPOTENCY_REPLAY_UNAVAILABLE` and the secret cannot be shown a second time.
+
+**Settings.**
+- Gateway policy settings: owners can edit them and ops admins can read them. Only changed keys are sent, and a gateway 422 appears on the matching field.
+- Portal settings (portal name, display time zone, alert recipients) live in `cms_settings`. Owners and ops admins can edit them, and every change is audited.
+
+### Alert e-mail notifier (scheduled)
+**The system actor.** Run `php artisan cms:system-user` once per environment. It creates the account `alert-notifier@system.invalid`:
+- Its only role is `auditor`, with no project memberships. Auditors have `health.view` on all projects, which is all `GET /alerts` needs, and no write capability.
+- It is marked `is_system = true`. It has no password, cannot sign in (Fortify rejects it), cannot be invited, and owners cannot edit its access.
+- Disabling it on the Users page stops the notifier.
+
+**The scheduled job.** `cms:notify-alerts` runs every minute (`routes/console.php`, triggered by the cPanel cron). Each gateway call carries an assertion with these claims:
+
+| Claim | Value |
+|---|---|
+| `sub` | the system user's uuid |
+| `name` | `CMS alert notifier (system)` |
+| `roles` | `["auditor"]` |
+| `projects` | `[]` |
+| `project_roles` | `{}` |
+| `mfa` | `true` |
+| `iss`, `aud`, `iat`, `exp`, `jti` | as for any staff assertion |
+
+The signer allows `mfa: true` without a TOTP enrolment only for `is_system` users, because a system account has no interactive login to protect.
+
+**On each run:**
+- It polls `GET /alerts?status=open` and e-mails each new alert id once to each recipient, one message per recipient.
+- Sent alerts are recorded in `alert_notifications` so they are not repeated. If a send fails, the record is released and the next run retries.
+- If the poll keeps failing for 2 minutes, it records a local `gateway_unreachable` alert in `system_state`. It e-mails that alert once per outage, shows it on Server & alerts, and sends a recovery e-mail when the gateway answers again.
+
 ### UI
 - Blade and Livewire 4. The project list is a Livewire component with search, status and organization filters and cursor paging.
 - The layout is responsive with a sidebar menu that becomes off-canvas on mobile.
@@ -103,8 +165,9 @@ Metadata keys that look like secrets (password, token, secret, code, …) are dr
 4. **Generate the assertion key outside the web root:** `php artisan cms:assertion-keypair /home/<account>/secrets/cms_assertion.key`. Set `CMS_ASSERTION_SECRET_KEY_PATH` to that path. Install the printed public key on the gateway as `<GATEWAY_SECRETS_PATH>/cms_assertion.pub`.
 5. **Prepare the app:** run `php artisan key:generate` (first deploy only), then `php artisan migrate --force` and `php artisan config:cache route:cache view:cache`.
 6. **Create the first owner:** run `php artisan cms:bootstrap-owner owner@yourdomain "Name"` and open the printed link within 24 hours.
-7. **Cron** (cPanel → Cron Jobs): `* * * * * cd /home/<account>/cms && php artisan schedule:run >> /dev/null 2>&1`. Use the PHP 8.3+ binary path the host gives, for example `/opt/cpanel/ea-php83/root/usr/bin/php`.
-8. **Gateway allowlist:** the gateway's management vhost allowlists the cPanel egress IP (ADR D6). Check outbound HTTPS from cPanel before go-live (`docs/preflight.md`).
+7. **System actor for scheduled jobs:** run `php artisan cms:system-user`, then set the alert recipients under Settings.
+8. **Cron** (cPanel → Cron Jobs): `* * * * * cd /home/<account>/cms && php artisan schedule:run >> /dev/null 2>&1`. Use the PHP 8.3+ binary path the host gives, for example `/opt/cpanel/ea-php83/root/usr/bin/php`.
+9. **Gateway allowlist:** the gateway's management vhost allowlists the cPanel egress IP (ADR D6). Check outbound HTTPS from cPanel before go-live (`docs/preflight.md`).
 
 ## Repository layout (CMS-specific)
 
@@ -117,4 +180,6 @@ Metadata keys that look like secrets (password, token, secret, code, …) are dr
 | `app/Livewire/ProjectIndex.php` | project list |
 | `app/Console/Commands/` | `cms:bootstrap-owner`, `cms:reissue-invitation`, `cms:assertion-keypair` |
 | `config/cms.php` | feature flags, navigation, project tabs, invitation lifetime |
+| `app/Services/CmsSettings.php`, `app/Services/GatewayReachability.php` | portal settings; gateway reachability streak |
+| `app/Console/Commands/NotifyAlerts.php`, `app/Console/Commands/CreateSystemUser.php` | scheduled alert notifier and its system actor |
 | `tests/` | PHPUnit feature tests (MFA, invitations, permission matrix, assertion, gateway client, pages, CSRF, sessions) |
