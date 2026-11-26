@@ -37,7 +37,7 @@ Owners are `TBD` until the PM assigns them. Status values: `todo`, `in-progress`
 | P0-4 | Public API OpenAPI 3 draft | P0 | P0-2 | approved; implemented | `docs/api/public-openapi.yaml` |
 | P0-5 | Management API OpenAPI 3 draft and permission matrix | P0 | P0-2 | approved; wire format fixed in `docs/api/management-auth.md` | `docs/api/management-openapi.yaml`, `docs/permissions.md` |
 | P0-6 | Server preflight script and checklist | P0 | — | review | `infra/preflight/server-preflight.sh`, `docs/preflight.md` |
-| P0-7 | Run preflight on VPS and cPanel, record results | P0 | P0-6, B-2, B-3 | blocked (needs access) | |
+| P0-7 | Run preflight on VPS and cPanel, record results | P0 | P0-6, B-2, B-3 | cPanel: SSH available; run `infra/preflight/cpanel-preflight.sh`. VPS: `server-preflight.sh` | |
 | P0-8 | Staging plan (staging VPS or staging vhost and DB, synthetic data, `uhk_test_` keys) | P0 | P0-7 | todo | |
 
 ### Progress snapshot (2026-11-26, end of day)

@@ -11,7 +11,36 @@ The bundle `unihub-cms-<sha>.zip` already contains:
 
 The AI gateway does **not** run here; it runs on the VPS (ADR 0001).
 
-## First install
+## Recommended: deploy over SSH
+With SSH access, run everything from your own machine (Git Bash on Windows). There are no temporary cron jobs, and each deploy is atomic with a one-command rollback.
+
+1. **Preflight** (read-only). Paste the output into `docs/preflight-results.md`:
+   ```bash
+   ssh <user>@<cpanel-host> 'bash -s' < infra/preflight/cpanel-preflight.sh
+   ```
+   It reports:
+   - which PHP 8.3/8.4 binaries exist and which required extensions are missing
+   - whether `composer`, `git` and `mysqldump` are available
+   - outbound HTTPS and the egress IP (needed for the gateway allowlist)
+
+   Pick the PHP binary it lists, e.g. `/opt/cpanel/ea-php83/root/usr/bin/php`.
+2. **Database:** in cPanel → MySQL Databases, create the DB and user.
+3. **Deploy.** Download the bundle from the GitHub Actions `cms-bundle` artifact, or build it with `bash infra/scripts/build-cms-bundle.sh`, then run:
+   ```bash
+   bash infra/scripts/deploy-cms-ssh.sh <user>@<cpanel-host> dist/unihub-cms-<sha>.zip /opt/cpanel/ea-php83/root/usr/bin/php
+   ```
+   - The **first run** creates `~/unihub-cms/shared/.env` with a generated `APP_KEY`, then stops. Edit that file over SSH (APP_URL, DB_*, MAIL_*, GATEWAY_*, `CMS_ASSERTION_SECRET_KEY_PATH=$HOME/unihub-cms/secrets/cms_assertion.key`) and run the same command again.
+   - **Every run:** the script checks the PHP version and extensions, backs up the DB with `mysqldump` if available, migrates, caches the config, and switches `~/unihub-cms/current` to the new release.
+4. **Document root:** in cPanel → Domains, set it to `~/unihub-cms/current/public`. This is a one-time step.
+5. **First-install commands:** the script prints them at the end. They are `cms:assertion-keypair`, `cms:system-user`, `cms:bootstrap-owner` and the scheduler cron line.
+6. **Rollback:**
+   ```bash
+   bash infra/scripts/deploy-cms-ssh.sh <user>@<cpanel-host> --rollback <php-binary>
+   ```
+
+The manual File Manager procedure below is for accounts **without** SSH.
+
+## First install (without SSH)
 1. **Upload and extract.** In cPanel → File Manager, upload the zip to your home directory, e.g. `/home/<account>/`, and **Extract**. This creates `/home/<account>/cms/`. Check its hash first against `unihub-cms-<sha>.zip.sha256`.
 2. **Document root.** In cPanel → Domains, set the (sub)domain's document root to `/home/<account>/cms/public`.
    - If the host won't allow that, use a symlink: `public_html` → `cms/public`.
