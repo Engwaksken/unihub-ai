@@ -31,6 +31,11 @@ Route::get('/', function () {
     return redirect()->route(Features::enabled('overview') && Gate::allows('overview.view') ? 'overview' : 'projects.index');
 })->name('home');
 
+// WITU deployment brief URL names (docs/witu/audit.md §Routing). Plain redirects to the
+// existing modules, so access control stays on the target routes.
+Route::redirect('/dashboard', '/');
+Route::redirect('/api-keys', '/keys');
+
 // Single-use, expiring set-password links (invitations and bootstrap owner).
 Route::get('/invitations/{token}', [InvitationController::class, 'show'])
     ->middleware('throttle:30,1')->name('invitations.show');
