@@ -60,25 +60,28 @@ jobs:
       - run: cp .env.example .env && php artisan key:generate
       - run: composer ci
 
-  cms-assets:
-    name: cms build artefact (for cPanel upload)
+  cms-bundle:
+    name: cms cPanel deploy bundle (vendor + public/build)
     needs: cms
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: cms
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'   # build on the cPanel floor version
+          extensions: sodium, pdo_mysql, intl, mbstring, zip
+          tools: composer
+          coverage: none
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm ci && npm run build
+      - run: bash infra/scripts/build-cms-bundle.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: cms-public-build-${{ github.sha }}
-          path: cms/public/build
-          retention-days: 14
+          name: unihub-cms-bundle-${{ github.sha }}
+          path: dist/unihub-cms-*
+          retention-days: 30
 
   client-package:
     name: integrations/laravel-central-ai

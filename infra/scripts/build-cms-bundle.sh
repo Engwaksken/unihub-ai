@@ -4,14 +4,17 @@
 # optimised autoloader) + compiled public/build assets. No .env, no tests, no node_modules.
 #
 # Usage:  bash infra/scripts/build-cms-bundle.sh [git-ref]        (default HEAD)
-#   env:  PHP=/path/to/php8.x  COMPOSER=/path/to/composer.phar   (defaults: php / composer on PATH)
+#   env:  PHP=/path/to/php8.x  COMPOSER_PHAR=/path/to/composer.phar  PHP_ARGS="-d extension=sodium ..."
+#         (defaults: php / composer on PATH; do NOT use COMPOSER, which composer reads as the composer.json path)
 # Output: dist/unihub-cms-<shortsha>.zip  (+ .sha256)
 set -euo pipefail
 REF="${1:-HEAD}"
 ROOT="$(git rev-parse --show-toplevel)"
 SHA="$(git -C "$ROOT" rev-parse --short "$REF")"
 PHP="${PHP:-php}"
-COMPOSER_BIN="${COMPOSER:-$(command -v composer)}"
+COMPOSER_BIN="${COMPOSER_PHAR:-$(command -v composer)}"
+# shellcheck disable=SC2206
+PHPX=("$PHP" ${PHP_ARGS:-})
 DIST="$ROOT/dist"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -25,7 +28,7 @@ git -C "$ROOT" archive "$REF" cms | tar -x -C "$WORK"
 cd "$WORK/cms"
 
 echo "==> composer install --no-dev (PHP: $("$PHP" -r 'echo PHP_VERSION;'))"
-"$PHP" "$COMPOSER_BIN" install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+"${PHPX[@]}" "$COMPOSER_BIN" install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 
 echo "==> npm ci && npm run build"
 npm ci --no-audit --no-fund
@@ -52,7 +55,7 @@ echo "==> Zipping"
 mkdir -p "$DIST"
 OUT="$DIST/unihub-cms-$SHA.zip"
 rm -f "$OUT"
-"$PHP" -r '
+"${PHPX[@]}" -r '
 $src = $argv[1]; $out = $argv[2];
 $z = new ZipArchive();
 if ($z->open($out, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) { fwrite(STDERR, "cannot create zip\n"); exit(1); }
