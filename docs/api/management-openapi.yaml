@@ -1,0 +1,250 @@
+openapi: 3.0.3
+info:
+  title: Unihub Central AI — Management API (internal)
+  version: 1.0.0-draft
+  description: |
+    DRAFT for P0 approval. Served ONLY on the management vhost (mgmt-ai.kemmytech.com, IP-allowlisted);
+    returns 404 on the public hostname. Every request needs BOTH:
+      1. Authorization: Bearer <management token>
+      2. X-Actor-Assertion: compact JWS (EdDSA/Ed25519) with claims
+         iss=unihub-cms, aud=unihub-gateway-mgmt, iat, exp (<= iat+60), jti (single use), sub (CMS user uuid),
+         roles (array: owner|ops_admin|project_manager|auditor), project_roles ({project uuid: project_manager|auditor}; REQUIRED, {} when none),
+         projects (informational, ignored), mfa=true.
+    The gateway enforces docs/permissions.md again; out-of-scope resources return 404.
+    Mutations require Idempotency-Key header and are audited with actor_ref=cms:<sub> and request_id.
+    Wire conventions (envelopes, error codes, assertion format) are normative in docs/api/management-auth.md.
+    Single resources are returned as {"data": {...}}.
+    Pagination: cursor-based (?cursor=&limit<=100). Times are UTC ISO-8601.
+servers:
+  - url: https://mgmt-ai.kemmytech.com/internal/v1
+security:
+  - mgmtToken: []
+    actorAssertion: []
+paths:
+  /summary:
+    get:
+      summary: Overview aggregates
+      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' } ]
+      responses:
+        '200':
+          description: Aggregates. Unknown metrics are null, never 0.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  active_projects: { type: integer }
+                  requests_today: { type: integer }
+                  completion_rate: { type: number, nullable: true }
+                  queue_depth: { type: integer }
+                  p95_total_ms: { type: integer, nullable: true }
+                  ram_used_pct: { type: number, nullable: true }
+                  telemetry_sampled_at: { type: string, format: date-time, nullable: true }
+                  model_status: { type: string, enum: [loaded, idle, unreachable, unknown] }
+                  admission: { type: string, enum: [open, paused] }
+                  trend: { type: array, items: { type: object, properties: { bucket: { type: string, format: date-time }, requests: { type: integer }, failed: { type: integer }, p95_total_ms: { type: integer, nullable: true } } } }
+  /organizations:
+    get: { summary: List organizations, responses: { '200': { $ref: '#/components/responses/Page' } } }
+    post:
+      summary: Create organization (owner)
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 120 } } } } } }
+      responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } }
+  /organizations/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    patch:
+      summary: Rename / change status (active|archived)
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, status: { type: string, enum: [active, archived] } } } } } }
+      responses: { '200': { description: Updated } }
+  /projects:
+    get:
+      summary: List projects (scoped)
+      parameters: [ { name: organization_id, in: query, schema: { type: string, format: uuid } }, { name: status, in: query, schema: { type: string } }, { name: environment, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { $ref: '#/components/responses/Page' } }
+    post:
+      summary: Register project (owner, ops_admin)
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectCreate' } } } }
+      responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Project' } } } } } }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /projects/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get: { summary: Project detail, responses: { '200': { description: OK, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Project' } } } } } }, '404': { $ref: '#/components/responses/Error' } } }
+    patch:
+      summary: Update project policy/metadata (field-level permissions per matrix; quota fields owner only)
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/ProjectPatch' } } } }
+      responses: { '200': { description: Updated }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /projects/{id}/keys:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get: { summary: List key metadata (never secrets), responses: { '200': { $ref: '#/components/responses/Page' } } }
+    post:
+      summary: Issue key (secret returned ONCE); optionally rotate an existing key with overlap
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string, maxLength: 80 }
+                expires_at: { type: string, format: date-time, nullable: true }
+                rotates_key_id: { type: string, format: uuid, nullable: true }
+                overlap_days: { type: integer, minimum: 0, maximum: 30, default: 7 }
+      responses:
+        '201':
+          description: Issued. Response carries Cache-Control no-store. Idempotent replay of this call returns 409 (secret cannot be re-shown).
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string } } } } }
+  /keys/{id}/revoke:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post: { summary: Revoke key (idempotent), parameters: [ { $ref: '#/components/parameters/IdemKey' } ], responses: { '200': { description: Revoked } } }
+  /models:
+    get: { summary: "Installed models (tag, digest, size, licence, enabled, checked_at)", responses: { '200': { $ref: '#/components/responses/Page' } } }
+  /models/refresh:
+    post: { summary: Re-read installed models from Ollama /api/tags (no pulls), responses: { '202': { description: Refresh started } } }
+  /models/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    patch:
+      summary: Enable/disable an installed, approved tag
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { content: { application/json: { schema: { type: object, required: [enabled], properties: { enabled: { type: boolean }, licence: { type: string } } } } } }
+      responses: { '200': { description: Updated }, '409': { $ref: '#/components/responses/Error' } }
+  /tasks:
+    get: { summary: List tasks with versions, responses: { '200': { $ref: '#/components/responses/Page' } } }
+    post:
+      summary: Create task or new draft version
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/TaskVersionCreate' } } } }
+      responses: { '201': { description: Created } }
+  /tasks/{key}/versions/{version}/publish:
+    parameters: [ { name: key, in: path, required: true, schema: { type: string } }, { name: version, in: path, required: true, schema: { type: integer } } ]
+    post: { summary: Publish version (becomes immutable and current), parameters: [ { $ref: '#/components/parameters/IdemKey' } ], responses: { '200': { description: Published }, '409': { $ref: '#/components/responses/Error' } } }
+  /jobs:
+    get:
+      summary: Job metadata (no payloads)
+      parameters: [ { $ref: '#/components/parameters/ProjectFilter' }, { name: state, in: query, schema: { type: string } }, { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/Cursor' } ]
+      responses: { '200': { $ref: '#/components/responses/Page' } }
+  /jobs/{id}/cancel:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post: { summary: Cancel queued job, parameters: [ { $ref: '#/components/parameters/IdemKey' } ], responses: { '200': { description: Cancelled }, '409': { $ref: '#/components/responses/Error' } } }
+  /jobs/{id}/retry:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post:
+      summary: Re-queue an eligible failed job (transient error, payload not yet purged) as a NEW job linked via retry_of
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, maxLength: 200 } } } } } }
+      responses: { '201': { description: New job }, '409': { $ref: '#/components/responses/Error' } }
+  /usage:
+    get:
+      summary: Aggregates by day/project/model; format=csv for export (scoped)
+      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' }, { name: group_by, in: query, schema: { type: string, enum: [day, project, model] } }, { name: format, in: query, schema: { type: string, enum: [json, csv] } } ]
+      responses: { '200': { description: "Rows with key, requests, completed, failed, failure_rate, tokens_in, tokens_out, p50/p95 queue_ms and inference_ms, p95_total_ms, inference_ms_sum, est_cost_usd" } }
+  /health:
+    get: { summary: Latest host/worker/Ollama/TLS telemetry with sampled_at and stale flag, responses: { '200': { description: OK } } }
+  /admission:
+    put:
+      summary: Pause or resume admission (incident)
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { content: { application/json: { schema: { type: object, required: [state, reason], properties: { state: { type: string, enum: [open, paused] }, reason: { type: string } } } } } }
+      responses: { '200': { description: OK } }
+  /alerts:
+    get: { summary: Alerts (status filter open|acknowledged|resolved), responses: { '200': { $ref: '#/components/responses/Page' } } }
+  /alerts/{id}/ack:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    post: { summary: Acknowledge, parameters: [ { $ref: '#/components/parameters/IdemKey' } ], responses: { '200': { description: Acknowledged } } }
+  /settings:
+    get: { summary: Gateway policy settings, responses: { '200': { description: OK } } }
+    patch: { summary: Update (owner; validated; audited with before/after), parameters: [ { $ref: '#/components/parameters/IdemKey' } ], responses: { '200': { description: Updated }, '422': { $ref: '#/components/responses/Error' } } }
+  /audit:
+    get:
+      summary: Scoped, paginated gateway audit events; format=csv for export
+      parameters: [ { $ref: '#/components/parameters/ProjectFilter' }, { name: action, in: query, schema: { type: string } }, { name: actor, in: query, schema: { type: string } }, { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/Cursor' }, { name: format, in: query, schema: { type: string, enum: [json, csv] } } ]
+      responses: { '200': { $ref: '#/components/responses/Page' } }
+components:
+  securitySchemes:
+    mgmtToken: { type: http, scheme: bearer }
+    actorAssertion: { type: apiKey, in: header, name: X-Actor-Assertion }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdemKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, maxLength: 128 } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    From: { name: from, in: query, schema: { type: string, format: date-time } }
+    To: { name: to, in: query, schema: { type: string, format: date-time } }
+    ProjectFilter: { name: project_id, in: query, schema: { type: string, format: uuid } }
+  schemas:
+    ProjectCreate:
+      type: object
+      required: [organization_id, slug, name, environment]
+      properties:
+        organization_id: { type: string, format: uuid }
+        slug: { type: string, pattern: '^[a-z0-9][a-z0-9-]{2,62}$' }
+        name: { type: string, maxLength: 120 }
+        owner_ref: { type: string, maxLength: 120, description: Name/role of accountable owner (no CMS user ids) }
+        contact_email: { type: string, format: email }
+        environment: { type: string, enum: [staging, production] }
+        daily_limit: { type: integer, minimum: 0, default: 100 }
+        rpm_limit: { type: integer, minimum: 0, default: 5 }
+        queue_limit: { type: integer, minimum: 0, maximum: 8, default: 2 }
+        allowed_tasks: { type: array, items: { type: string } }
+    ProjectPatch:
+      type: object
+      properties:
+        name: { type: string }
+        owner_ref: { type: string, nullable: true }
+        contact_email: { type: string, format: email, nullable: true }
+        environment: { type: string, enum: [staging, production] }
+        status: { type: string, enum: [active, disabled, archived] }
+        daily_limit: { type: integer, minimum: 0 }
+        rpm_limit: { type: integer, minimum: 0 }
+        queue_limit: { type: integer, minimum: 0, maximum: 8 }
+        allowed_tasks: { type: array, items: { type: string } }
+    Project:
+      type: object
+      required: [id, organization, slug, name, environment, status, daily_limit, rpm_limit, queue_limit, allowed_tasks, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        organization:
+          type: object
+          required: [id, name]
+          properties: { id: { type: string, format: uuid }, name: { type: string } }
+        slug: { type: string }
+        name: { type: string }
+        owner_ref: { type: string, nullable: true }
+        contact_email: { type: string, nullable: true }
+        environment: { type: string, enum: [staging, production] }
+        status: { type: string, enum: [active, disabled, archived] }
+        daily_limit: { type: integer }
+        rpm_limit: { type: integer }
+        queue_limit: { type: integer }
+        allowed_tasks: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ApiKey:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        label: { type: string }
+        prefix: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+    TaskVersionCreate:
+      type: object
+      required: [key, system_template, output_cap, model_id]
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9_]{1,63}$' }
+        description: { type: string }
+        system_template: { type: string, maxLength: 4000, description: Static system prompt; no placeholders that interpolate user input }
+        output_cap: { type: integer, minimum: 1, maximum: 256 }
+        model_id: { type: string, format: uuid }
+        output_format: { type: string, enum: [text, json], default: text }
+  responses:
+    Page:
+      description: Paginated list
+      content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { type: object } }, next_cursor: { type: string, nullable: true } } } } }
+    Error:
+      description: Same error envelope as public API
+      content: { application/json: { schema: { type: object, properties: { error: { type: object, properties: { code: { type: string }, message: { type: string } } }, request_id: { type: string } } } } }

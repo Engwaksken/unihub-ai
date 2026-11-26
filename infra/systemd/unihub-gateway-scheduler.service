@@ -1,0 +1,24 @@
+# Laravel scheduler: gateway:sample every 30 s, gateway:purge every 15 min.
+[Unit]
+Description=Unihub AI gateway scheduler (telemetry + retention purge)
+After=network-online.target
+
+[Service]
+Type=simple
+User=unihub-gw
+Group=unihub-gw
+WorkingDirectory=/opt/unihub-gateway/current
+ExecStart=/usr/bin/php8.4 artisan schedule:work
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/unihub-gateway /opt/unihub-gateway/shared/storage
+# Read TLS cert expiry; read secrets.
+ReadOnlyPaths=/etc/unihub-gateway /etc/letsencrypt
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

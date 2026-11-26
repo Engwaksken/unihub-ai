@@ -1,0 +1,27 @@
+{
+    "name": "unihub/central-ai-client",
+    "description": "Laravel client for the Unihub Central AI gateway (asynchronous /v1/jobs). Server-side only: never ship project keys to mobile apps.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.2",
+        "illuminate/http": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "illuminate/database": "^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "phpunit/phpunit": "^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": { "Unihub\\CentralAi\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "Unihub\\CentralAi\\Tests\\": "tests/" }
+    },
+    "extra": {
+        "laravel": { "providers": ["Unihub\\CentralAi\\CentralAiServiceProvider"] }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

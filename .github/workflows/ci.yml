@@ -1,0 +1,105 @@
+# CI for the unihub-ai-platform monorepo (P1-7). Assumes GitHub Actions (open question Q-06).
+# Rule (PRD §10): do not merge failed tests.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway:
+    name: gateway (PHP 8.4)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: sodium, pdo_sqlite, intl, mbstring
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.example .env && php artisan key:generate
+      # pint --test, larastan level 5, OpenAPI YAML parse, phpunit (incl. OpenAPI contract tests), composer audit
+      - run: composer ci
+
+  cms:
+    name: cms (PHP ${{ matrix.php }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']   # cPanel version unknown until preflight (B-2)
+    defaults:
+      run:
+        working-directory: cms
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: sodium, pdo_sqlite, pdo_mysql, intl, mbstring
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cms/package-lock.json
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: npm ci && npm run build && npm audit --omit=dev
+      - run: cp .env.example .env && php artisan key:generate
+      - run: composer ci
+
+  cms-assets:
+    name: cms build artefact (for cPanel upload)
+    needs: cms
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: cms
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci && npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cms-public-build-${{ github.sha }}
+          path: cms/public/build
+          retention-days: 14
+
+  client-package:
+    name: integrations/laravel-central-ai
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: integrations/laravel-central-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: sodium, pdo_sqlite
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: vendor/bin/phpunit
+
+  infra:
+    name: infra scripts (bash -n, shellcheck)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: for f in infra/scripts/*.sh infra/preflight/*.sh tests/load/*.sh; do bash -n "$f"; done
+      - run: shellcheck -S warning infra/scripts/*.sh infra/preflight/*.sh tests/load/*.sh

@@ -1,0 +1,180 @@
+openapi: 3.0.3
+info:
+  title: Unihub Central AI — Public Job API
+  version: 1.0.0-draft
+  description: |
+    Asynchronous job API for authorised project backends. DRAFT for P0 approval.
+    Project identity is derived solely from the bearer key; no project_id is accepted from clients.
+    No streaming in MVP. Clients poll GET /v1/jobs/{id} every 3–10 s with backoff and a bounded deadline
+    (recommended: give up after 300 s and treat as expired).
+    Never embed keys in mobile/Flutter builds — call this API from your server only.
+servers:
+  - url: https://ai.kemmytech.com
+    description: Production (proposed)
+security:
+  - projectKey: []
+paths:
+  /healthz:
+    get:
+      summary: Minimal liveness
+      security: []
+      responses:
+        '200':
+          description: Alive. Contains no model or resource details.
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string, enum: [ok] } }, required: [status] }
+              example: { status: ok }
+  /v1/jobs:
+    post:
+      summary: Submit a job
+      description: |
+        Same idempotency_key + identical body (task, input, max_tokens) returns the original job (HTTP 202,
+        same job_id) and does not consume quota. Same key with a different body returns 409.
+        Input is never silently truncated: if the estimated input tokens + max_tokens exceed the context
+        budget (2048), the request is rejected with 422 TOKEN_BUDGET.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobCreate' }
+            example: { task: daily_plan, input: Plan my study day, max_tokens: 200, idempotency_key: 3b1f6f0e-6f1c-4a7e-9d3a-2b5e0c7f9a11 }
+      responses:
+        '202':
+          description: Accepted (new or idempotent replay)
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/RequestId' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobAccepted' }
+              example: { job_id: 9f8c1b2a-0d4e-4c6b-8a1f-5e2d3c4b5a69, status: queued, request_id: 0b7e5c1d-2f3a-4e5b-9c8d-7a6b5c4d3e2f }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '413': { $ref: '#/components/responses/Error' }
+        '415': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/jobs/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Get own job status/result
+      description: Unknown jobs and jobs of other projects both return 404 (indistinguishable).
+      responses:
+        '200':
+          description: Job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+              examples:
+                completed: { value: { job_id: 9f8c1b2a-0d4e-4c6b-8a1f-5e2d3c4b5a69, status: completed, output: "08:00 Review notes...", model: "qwen2.5:1.5b", task: daily_plan, task_version: 3, created_at: "2026-11-26T09:00:00Z", completed_at: "2026-11-26T09:00:41Z", request_id: 0b7e5c1d-2f3a-4e5b-9c8d-7a6b5c4d3e2f } }
+                failed: { value: { job_id: 9f8c1b2a-0d4e-4c6b-8a1f-5e2d3c4b5a69, status: failed, error: { code: INFERENCE_TIMEOUT, message: Inference deadline exceeded }, model: "qwen2.5:1.5b", task: daily_plan, task_version: 3, created_at: "2026-11-26T09:00:00Z", request_id: 0b7e5c1d-2f3a-4e5b-9c8d-7a6b5c4d3e2f } }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      summary: Cancel own queued job
+      description: queued → cancelled (200). Already cancelled → 200 (idempotent). running/completed/failed/expired → 409 INVALID_STATE.
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobAccepted' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    projectKey:
+      type: http
+      scheme: bearer
+      description: "Project key, format uhk_<live|test>_<prefix>_<secret>. Shown once at issue."
+  headers:
+    RequestId:
+      schema: { type: string, format: uuid }
+      description: Correlation id; also in every body. Clients may send X-Request-Id (uuid) to propagate their own.
+    RetryAfter:
+      schema: { type: integer, minimum: 1 }
+      description: Seconds until retry is sensible.
+  schemas:
+    JobCreate:
+      type: object
+      additionalProperties: false
+      required: [task, input, idempotency_key]
+      properties:
+        task: { type: string, pattern: '^[a-z][a-z0-9_]{1,63}$', description: Approved task key in project allowlist }
+        input: { type: string, minLength: 1, maxLength: 16000, description: UTF-8 user input. HTTP body capped at 32 KiB. }
+        max_tokens: { type: integer, minimum: 1, maximum: 256, default: 200, description: Further capped by task output cap. }
+        idempotency_key: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+    JobAccepted:
+      type: object
+      required: [job_id, status, request_id]
+      properties:
+        job_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        request_id: { type: string, format: uuid }
+    JobStatus:
+      type: string
+      enum: [queued, running, completed, failed, cancelled, expired]
+    Job:
+      type: object
+      required: [job_id, status, task, task_version, created_at, request_id]
+      properties:
+        job_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        output: { type: string, nullable: true, description: "Present only when completed and before result TTL. Untrusted model text: escape before display, validate before structured use." }
+        error: { $ref: '#/components/schemas/ErrorBody' }
+        model: { type: string, nullable: true }
+        task: { type: string }
+        task_version: { type: integer }
+        tokens_in: { type: integer, nullable: true }
+        tokens_out: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        request_id: { type: string, format: uuid }
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [INVALID_REQUEST, UNAUTHENTICATED, PROJECT_DISABLED, TASK_NOT_ALLOWED, NOT_FOUND, IDEMPOTENCY_CONFLICT, INVALID_STATE, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, VALIDATION_FAILED, TOKEN_BUDGET, QUOTA_EXCEEDED, QUEUE_FULL, RATE_LIMITED, SERVICE_UNAVAILABLE, ADMISSION_PAUSED, INFERENCE_TIMEOUT, INFERENCE_FAILED, OUTPUT_INVALID, WORKER_LOST, QUEUE_TIMEOUT]
+        message: { type: string }
+        details: { type: object, additionalProperties: true, description: e.g. validation field names; never contains payloads or internals }
+    Error:
+      type: object
+      required: [error, request_id]
+      properties:
+        error: { $ref: '#/components/schemas/ErrorBody' }
+        request_id: { type: string, format: uuid }
+  responses:
+    Error:
+      description: Error envelope (no stack traces, no internal URLs)
+      headers:
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: IDEMPOTENCY_CONFLICT, message: idempotency_key reused with a different body }, request_id: 0b7e5c1d-2f3a-4e5b-9c8d-7a6b5c4d3e2f }
+    RateLimited:
+      description: QUOTA_EXCEEDED, QUEUE_FULL or RATE_LIMITED (poll too fast)
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+        X-Request-Id: { $ref: '#/components/headers/RequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: { code: QUEUE_FULL, message: Try later }, request_id: 0b7e5c1d-2f3a-4e5b-9c8d-7a6b5c4d3e2f }
+    Unavailable:
+      description: SERVICE_UNAVAILABLE or ADMISSION_PAUSED (incident mode)
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

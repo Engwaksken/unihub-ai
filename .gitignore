@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+vendor/
+node_modules/
+*.sqlite
+*.sqlite-*
+storage/*.key
+/infra/secrets/
+preflight-*.txt
+.idea/
+.vscode/
+benchmark-results/
