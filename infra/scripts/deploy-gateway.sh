@@ -10,7 +10,6 @@ set -euo pipefail
 REF="${1:?git ref (tag/commit) required}"
 REPO="${2:-${UNIHUB_REPO:?set UNIHUB_REPO or pass repo url}}"
 BASE=/opt/unihub-gateway
-DB=/var/lib/unihub-gateway/gateway.sqlite
 PHP=/usr/bin/php8.4
 APP_USER=unihub-gw
 
