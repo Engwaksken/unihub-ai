@@ -11,3 +11,4 @@ preflight-*.txt
 .idea/
 .vscode/
 benchmark-results/
+dist/
