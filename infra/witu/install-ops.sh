@@ -10,19 +10,20 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 LIB=/usr/local/lib/witu-ai
 
 install -d -m 755 -o root -g root "$LIB"
-for f in lib.sh deploy-cms.sh rollback-cms.sh backup-cms.sh; do
+for f in lib.sh deploy-cms.sh rollback-cms.sh backup-cms.sh deploy-gateway.sh; do
   install -m 755 -o root -g root "$HERE/$f" "$LIB/$f"
 done
 ln -sfn "$LIB/deploy-cms.sh" /usr/local/sbin/witu-deploy-cms
 ln -sfn "$LIB/rollback-cms.sh" /usr/local/sbin/witu-rollback-cms
 ln -sfn "$LIB/backup-cms.sh" /usr/local/sbin/witu-backup
+ln -sfn "$LIB/deploy-gateway.sh" /usr/local/sbin/witu-deploy-gateway
 
 install -d -m 700 /var/backups/witu-ai
 install -d -m 750 -o witu-deploy -g witu-deploy /home/witu-deploy/incoming
 
-# The deploy account may run exactly these two commands as root, nothing else.
+# The deploy account may run exactly these commands as root, nothing else.
 cat > /etc/sudoers.d/witu-deploy <<'EOF'
-witu-deploy ALL=(root) NOPASSWD: /usr/local/sbin/witu-deploy-cms, /usr/local/sbin/witu-rollback-cms
+witu-deploy ALL=(root) NOPASSWD: /usr/local/sbin/witu-deploy-cms, /usr/local/sbin/witu-rollback-cms, /usr/local/sbin/witu-deploy-gateway
 EOF
 chmod 440 /etc/sudoers.d/witu-deploy
 visudo -cf /etc/sudoers.d/witu-deploy
@@ -51,4 +52,4 @@ EOF
 # so they are deliberately not rotated here.
 logrotate -d /etc/logrotate.d/witu-ai >/dev/null 2>&1 && echo "logrotate config OK"
 
-echo "Installed: witu-deploy-cms, witu-rollback-cms, witu-backup (in /usr/local/sbin), cron, logrotate, sudoers."
+echo "Installed: witu-deploy-cms, witu-rollback-cms, witu-backup, witu-deploy-gateway (in /usr/local/sbin), cron, logrotate, sudoers."

@@ -1,0 +1,35 @@
+# WITU AI gateway v2: the single inference worker (ADR D7). Exactly one instance; the
+# flock in gateway:work refuses a second copy even if this unit is duplicated.
+[Unit]
+Description=WITU AI gateway v2 inference worker
+After=network-online.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=witu-gw
+Group=witu-gw
+WorkingDirectory=/opt/witu-gateway
+ExecStart=/usr/bin/php8.4 artisan gateway:work --max-time=3600
+# Restarts hourly (max-time) and on crash; lease recovery runs at every start.
+Restart=always
+RestartSec=5
+# SIGTERM: finish the current job (within the inference deadline), then exit.
+KillSignal=SIGTERM
+TimeoutStopSec=150
+RuntimeDirectory=witu-gateway
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/witu-gateway /opt/witu-gateway/storage /opt/witu-gateway/bootstrap/cache /run/witu-gateway
+ReadOnlyPaths=/etc/witu-gateway
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

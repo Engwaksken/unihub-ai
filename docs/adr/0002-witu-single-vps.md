@@ -70,7 +70,7 @@ Any failure restores the previous code automatically. A database restore is a se
 - During phase B both gateways can call Ollama. Ollama runs with `OLLAMA_MAX_LOADED_MODELS=1` and `OLLAMA_NUM_PARALLEL=1`, so generations are serialised either way.
 
 ### W6. Frontend assets are never built on the VPS
-CI's `cms-bundle` artifact (`unihub-cms-<sha>.zip`) is uploaded over MobaXterm SFTP. The deploy refuses a bundle whose commit doesn't match the deployed ref.
+CI builds the `cms-bundle` artifact (`unihub-cms-<sha>.zip`). The deploy downloads it from the successful CI run of exactly the deployed commit (read-only token in `/etc/witu-ai/github-token`), or takes an SFTP-uploaded zip with `--assets`. It refuses a bundle whose commit does not match the deployed ref.
 
 ### W7. Database access
 - MariaDB binds to `127.0.0.1`.
