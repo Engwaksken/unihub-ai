@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Deploy the WITU AI Laravel CMS from /var/www/witu-ai-source (git) into /var/www/witu-ai.
 #
-#   sudo witu-deploy-cms <git-ref> --assets <unihub-cms-<sha>.zip> [--migrate]
+#   sudo witu-deploy-cms <git-ref> [--assets <unihub-cms-<sha>.zip>] [--migrate]
 #
 #   <git-ref>     tag, branch or commit that passed CI (e.g. origin/main, v1.0.0, 3f2c1ab)
 #   --assets      the CI "cms-bundle" artifact zip for THE SAME commit (its compiled public/build
-#                 is used; Node is never run on the VPS). Upload it with MobaXterm SFTP.
+#                 is used; Node is never run on the VPS). Optional: without it the bundle is
+#                 downloaded from that commit's successful CI run on GitHub (needs the token in
+#                 /etc/witu-ai/github-token). With it, e.g. an SFTP-uploaded zip, nothing is downloaded.
 #   --migrate     approve pending migrations. Without it the script prints the SQL that would run
 #                 (migrate --pretend) and stops before touching the live site.
 #
@@ -20,7 +22,7 @@ HERE="$(dirname "$(readlink -f "$0")")"   # resolves /usr/local/sbin symlinks
 . "$HERE/lib.sh"
 need_root
 
-REF="${1:?usage: witu-deploy-cms <git-ref> --assets <bundle.zip> [--migrate]}"; shift
+REF="${1:?usage: witu-deploy-cms <git-ref> [--assets <bundle.zip>] [--migrate]}"; shift
 ASSETS=""; MIGRATE=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,7 +31,7 @@ while [ $# -gt 0 ]; do
     *) die "unknown option $1" ;;
   esac
 done
-[ -n "$ASSETS" ] && [ -f "$ASSETS" ] || die "--assets <bundle.zip> is required and must exist"
+[ -z "$ASSETS" ] || [ -f "$ASSETS" ] || die "--assets $ASSETS: file not found"
 
 exec 9>/run/witu-deploy.lock
 flock -n 9 || die "another deploy/rollback is running"
@@ -45,6 +47,14 @@ as_deploy git -C "$SRC" fetch --quiet --tags --prune origin
 SHA=$(as_deploy git -C "$SRC" rev-parse --verify --short "$REF^{commit}") || die "unknown ref $REF"
 as_deploy git -C "$SRC" checkout --quiet --detach "$SHA"
 echo "commit $SHA: $(as_deploy git -C "$SRC" log -1 --format=%s)"
+
+if [ -z "$ASSETS" ]; then
+  log "Downloading the CI bundle for $SHA from GitHub"
+  mkdir -p "$TMP/bundle"
+  ASSETS=$(fetch_bundle "$(as_deploy git -C "$SRC" rev-parse "$SHA^{commit}")" "$TMP/bundle")
+  [ -n "$ASSETS" ] && [ -f "$ASSETS" ] || die "the downloaded artifact contained no unihub-cms-*.zip"
+  echo "bundle: $(basename "$ASSETS")"
+fi
 
 log "Verifying assets bundle"
 if [ -f "$ASSETS.sha256" ]; then (cd "$(dirname "$ASSETS")" && sha256sum -c --quiet "$(basename "$ASSETS").sha256") || die "bundle checksum mismatch"; fi
