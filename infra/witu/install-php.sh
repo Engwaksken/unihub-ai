@@ -84,7 +84,9 @@ mkdir -p /var/log/witu-ai && chown witu-cms:adm /var/log/witu-ai && chmod 750 /v
 php-fpm$PHPV -t
 systemctl enable --now php$PHPV-fpm
 systemctl reload php$PHPV-fpm
-ls -l /run/php/witu-cms.sock
+# reload is asynchronous: FPM recreates the pool sockets a moment after the signal.
+for _ in $(seq 1 20); do [ -S /run/php/witu-cms.sock ] && break; sleep 0.5; done
+ls -l /run/php/witu-cms.sock || { journalctl -u php$PHPV-fpm -n 20 --no-pager; exit 1; }
 
 echo
 echo "Done. Apache is unchanged; continue with runbook step 4 (MariaDB)."
