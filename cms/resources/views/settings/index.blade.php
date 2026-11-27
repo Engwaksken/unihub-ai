@@ -6,6 +6,15 @@
         $policyOpen = old('_modal') === 'policy';
         $groupKeys = [];
         foreach (array_keys($fields) as $g) { $groupKeys[\Illuminate\Support\Str::slug($g)] = $g; }
+        $canViewPolicy = \Illuminate\Support\Facades\Gate::allows('settings.view');
+        $sections = ['portal' => 'Portal', 'appearance' => 'Appearance'] + ($canViewPolicy ? ['policy' => 'Gateway policy'] : []);
+        // A form that failed validation re-opens on its own tab; otherwise ?tab= (kept in the URL by the tabs).
+        $activeSection = match (true) {
+            $policyOpen => 'policy',
+            $appearanceOpen, $errors->hasBag('appearance') => 'appearance',
+            $portalOpen, $errors->hasBag('cmsSettings'), $errors->hasBag('mailTest') => 'portal',
+            default => request()->query('tab'),
+        };
     @endphp
     <div class="page-header">
         <div>
@@ -15,7 +24,9 @@
     </div>
     @if ($errors->any() && ! $appearanceOpen && ! $portalOpen && ! $policyOpen) <x-form-errors /> @endif
 
+    <x-tabs name="settings" aria-label="Settings sections" :tabs="$sections" :active="$activeSection" query="tab">
     {{-- ---------- Portal ---------- --}}
+    <x-tab-panel tabs="settings" key="portal">
     <section class="card" aria-labelledby="portal-heading">
         <div class="section-head">
             <h2 id="portal-heading">Portal</h2>
@@ -84,7 +95,10 @@
         </div>
     </section>
 
+    </x-tab-panel>
+
     {{-- ---------- Appearance ---------- --}}
+    <x-tab-panel tabs="settings" key="appearance">
     <section class="card" aria-labelledby="appearance-heading">
         <div class="section-head">
             <h2 id="appearance-heading">Appearance</h2>
@@ -192,8 +206,11 @@
         </dl>
     </section>
 
+    </x-tab-panel>
+
     {{-- ---------- Gateway policy ---------- --}}
-    @can('settings.view')
+    @if ($canViewPolicy)
+    <x-tab-panel tabs="settings" key="policy">
         <section class="card" aria-labelledby="policy-heading">
             <div class="section-head">
                 <h2 id="policy-heading">Gateway policy</h2>
@@ -263,5 +280,7 @@
                 </dl>
             @endif
         </section>
-    @endcan
+    </x-tab-panel>
+    @endif
+    </x-tabs>
 </x-layouts.app>

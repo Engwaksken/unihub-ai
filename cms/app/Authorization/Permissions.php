@@ -129,6 +129,11 @@ final class Permissions
             'project_scoped' => true,
             'roles' => [self::O => self::ALL, self::OPS => self::ALL, self::PM => self::ASSIGNED],
         ],
+        'job.delete' => [
+            'label' => 'Delete finished jobs (metadata and payloads; usage is kept)',
+            'project_scoped' => true,
+            'roles' => [self::O => self::ALL, self::OPS => self::ALL],
+        ],
         'usage.view' => [
             'label' => 'View usage & reports; CSV export',
             'project_scoped' => true,

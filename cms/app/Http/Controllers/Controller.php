@@ -6,11 +6,14 @@ use App\Authorization\Permissions;
 use App\Gateway\Data\Project;
 use App\Gateway\Exceptions\GatewayAuthenticationException;
 use App\Gateway\Exceptions\GatewayConflictException;
+use App\Gateway\Exceptions\GatewayException;
+use App\Gateway\Exceptions\GatewayNotFoundException;
 use App\Gateway\Exceptions\GatewayRateLimitedException;
 use App\Gateway\Exceptions\GatewayUnavailableException;
 use App\Gateway\GatewayClient;
 use App\Support\DisplayTime;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -60,6 +63,80 @@ abstract class Controller
                 : 'The gateway is rate limiting requests. Wait a moment and try again.';
             throw ValidationException::withMessages(['form' => [$message]]);
         }
+    }
+
+    /**
+     * Redirect back after a bulk action: a success line plus the rows that were
+     * skipped and why (shown by <x-flash>).
+     *
+     * @param  list<string>  $skipped
+     */
+    protected function bulkResult(string $done, array $skipped): RedirectResponse
+    {
+        return back()->with('status', $done)->with('bulk_skipped', array_slice($skipped, 0, 100));
+    }
+
+    /**
+     * Run a gateway call for each selected row. A row the gateway refuses
+     * (wrong state, not found, forbidden, invalid) is skipped with its reason;
+     * an unreachable gateway stops the whole action (error page).
+     *
+     * @param  list<string>  $ids
+     * @param  callable(string): string  $label
+     * @param  callable(string): mixed  $call
+     * @return array{0: int, 1: list<string>} done count, skipped lines
+     */
+    protected function eachRow(array $ids, callable $label, callable $call): array
+    {
+        $done = 0;
+        $skipped = [];
+        foreach ($ids as $id) {
+            try {
+                $call($id);
+                $done++;
+            } catch (GatewayUnavailableException|GatewayAuthenticationException $e) {
+                throw $e;
+            } catch (GatewayRateLimitedException $e) {
+                $skipped[] = $label($id).': '.($e->errorCode === 'QUEUE_FULL' ? 'the job queue is full' : 'rate limited, try again shortly');
+            } catch (GatewayNotFoundException) {
+                $skipped[] = $label($id).': not found or outside your projects';
+            } catch (GatewayException $e) {
+                $skipped[] = $label($id).': '.$e->userMessage();
+            }
+        }
+
+        return [$done, $skipped];
+    }
+
+    /**
+     * Gateway idempotency key for one row of a bulk action: a resubmit of the
+     * same rendered form replays each row instead of repeating it.
+     */
+    protected function rowIdempotencyKey(Request $request, string $id): string
+    {
+        return $this->idempotencyKey($request).':'.strtolower($id);
+    }
+
+    /**
+     * @return list<string> validated, lower-cased, unique ids of the selected rows
+     */
+    protected function selectedIds(Request $request, int $max = 100): array
+    {
+        $ids = $request->input('ids');
+        // Reported under `form` so <x-flash> shows it on every page.
+        if (! is_array($ids) || $ids === []) {
+            throw ValidationException::withMessages(['form' => ['Select at least one row first.']]);
+        }
+        if (count($ids) > $max) {
+            throw ValidationException::withMessages(['form' => ["Select at most {$max} rows at a time."]]);
+        }
+        foreach ($ids as $id) {
+            if (! is_string($id) || ! Str::isUuid($id)) {
+                throw ValidationException::withMessages(['form' => ['The selection is invalid. Reload the page and try again.']]);
+            }
+        }
+
+        return array_values(array_unique(array_map('strtolower', $ids)));
     }
 
     /**

@@ -169,6 +169,13 @@ fieldset:disabled input, fieldset:disabled select, fieldset:disabled textarea { 
 .row-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
 .row-actions form { margin: 0; }
 .metadata { white-space: pre-wrap; font-size: .8rem; margin: .4rem 0 0; }
+/* Bulk selection: a toolbar above the table and a narrow checkbox column. */
+.bulk-bar { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; margin: 0 0 .5rem; padding: .5rem .75rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.bulk-count { margin: 0; font-size: .875rem; color: var(--ink-muted); }
+.bulk-count strong { color: var(--burgundy); }
+.bulk-actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.table .col-check { width: 2.5rem; padding-right: 0; vertical-align: middle; }
+.bulk-check { width: 18px; height: 18px; margin: 0; accent-color: var(--burgundy); cursor: pointer; }
 .pager { display: flex; gap: .5rem; align-items: center; justify-content: flex-end; margin: .5rem 0 1rem; }
 .pager-info { font-size: .875rem; color: var(--ink-muted); }
 

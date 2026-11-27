@@ -126,6 +126,12 @@ paths:
       summary: Job metadata (no payloads)
       parameters: [ { $ref: '#/components/parameters/ProjectFilter' }, { name: state, in: query, schema: { type: string } }, { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/Cursor' } ]
       responses: { '200': { $ref: '#/components/responses/Page' } }
+  /jobs/delete:
+    post:
+      summary: "Delete finished jobs (completed/failed/cancelled/expired) and their payloads, up to 100 ids (job.delete: owner, ops admin). Queued/running ids are skipped as not_found or not_finished; usage events are kept. Audited per job."
+      parameters: [ { $ref: '#/components/parameters/IdemKey' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [ids], properties: { ids: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } } } } } } }
+      responses: { '200': { description: "data.deleted (ids) and data.skipped ([{id, reason: not_found|not_finished}])" }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
   /jobs/{id}:
     parameters: [ { $ref: '#/components/parameters/Id' } ]
     get: { summary: "One job's metadata incl. error_transient (no payloads)", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }

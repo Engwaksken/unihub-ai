@@ -111,11 +111,41 @@
         </x-empty-state>
     @else
         <p class="muted small">Showing {{ $users->firstItem() }}–{{ $users->lastItem() }} of {{ $users->total() }}</p>
+        <x-bulk-bar id="bulk-users" :action="route('users.bulk')" noun="accounts">
+            <x-bulk-dialog action="role" title="Change a role on the selected accounts" trigger-label="Edit roles" confirm-label="Apply">
+                <p class="dialog-body">Add or remove one role and keep everything else. Removing Project manager or Auditor also removes the project assignments held with that role. The last owner always keeps the owner role.</p>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="bulk-role">Role</label>
+                        <select id="bulk-role" name="role">
+                            @foreach ($roles as $role)
+                                <option value="{{ $role->value }}">{{ $role->label() }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <fieldset class="field">
+                        <legend>Change</legend>
+                        <label class="checkbox"><input type="radio" name="role_change" value="add" checked> <span>Add this role</span></label>
+                        <label class="checkbox"><input type="radio" name="role_change" value="remove"> <span>Remove this role</span></label>
+                    </fieldset>
+                </div>
+            </x-bulk-dialog>
+            <x-bulk-dialog action="disable" title="Disable the selected accounts" trigger-label="Disable" confirm-label="Disable accounts" confirm-class="btn btn-danger">
+                <p class="dialog-body">Each account is signed out everywhere and can no longer sign in or act on the gateway. Your own account, the system account and the last active owner are skipped. You can re-enable them later.</p>
+            </x-bulk-dialog>
+            <x-bulk-dialog action="enable" title="Enable the selected accounts" trigger-label="Enable" confirm-label="Enable accounts">
+                <p class="dialog-body">Disabled accounts can sign in again with their password and authenticator.</p>
+            </x-bulk-dialog>
+            <x-bulk-dialog action="delete" title="Delete the selected accounts" trigger-label="Delete" trigger-class="btn btn-danger btn-sm" confirm-label="Delete accounts" confirm-class="btn btn-danger">
+                <p class="dialog-body">Accounts are deleted for good, with their roles, project assignments and pending invitations. Only invited (never signed in) or disabled accounts can be deleted; disable an active account first. Your own account and the last owner are skipped. The audit log keeps their history.</p>
+            </x-bulk-dialog>
+        </x-bulk-bar>
         <div class="table-wrap">
             <table class="table">
                 <caption class="visually-hidden">Staff accounts</caption>
                 <thead>
                     <tr>
+                        <th scope="col" class="col-check"><x-bulk-check form="bulk-users" label="Select all accounts on this page" /></th>
                         <th scope="col">Name</th>
                         <th scope="col">Roles</th>
                         <th scope="col" class="num">Projects</th>
@@ -140,6 +170,11 @@
                             $isOpen = old('_modal') === $modal;
                         @endphp
                         <tr>
+                            <td class="col-check">
+                                @unless ($user->isSystem() || $user->is(auth()->user()))
+                                    <x-bulk-check form="bulk-users" :value="$user->id" :label="'Select '.$user->name" />
+                                @endunless
+                            </td>
                             <th scope="row">
                                 {{ $user->name }}
                                 <span class="cell-sub">{{ $user->email }}</span>

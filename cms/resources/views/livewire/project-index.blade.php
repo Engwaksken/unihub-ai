@@ -85,6 +85,63 @@
             @endif
         </div>
 
+        @php($canBulk = $bulk['status'] || $bulk['environment'] || $bulk['quotas'])
+        @if ($canBulk && ! $error)
+            {{-- wire:ignore keeps the toolbar's dialogs and typed values while the list re-renders. --}}
+            <div wire:ignore>
+                <x-bulk-bar id="bulk-projects" :action="route('projects.bulk')" noun="projects">
+                    <x-bulk-dialog action="edit" title="Edit selected projects" trigger-label="Edit" confirm-label="Apply changes" size="lg">
+                        <p class="dialog-body">Only the fields you fill in are changed; empty fields keep each project's current value. Projects you may not change are skipped.</p>
+                        <div class="form-grid">
+                            @if ($bulk['status'])
+                                <div class="field">
+                                    <label for="bulk-status">Status</label>
+                                    <select id="bulk-status" name="status">
+                                        <option value="">No change</option>
+                                        @foreach (\App\Gateway\Data\Project::STATUSES as $option)
+                                            <option value="{{ $option }}">{{ ucfirst($option) }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            @endif
+                            @if ($bulk['environment'])
+                                <div class="field">
+                                    <label for="bulk-environment">Environment</label>
+                                    <select id="bulk-environment" name="environment">
+                                        <option value="">No change</option>
+                                        @foreach (\App\Gateway\Data\Project::ENVIRONMENTS as $option)
+                                            <option value="{{ $option }}">{{ ucfirst($option) }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            @endif
+                        </div>
+                        @if ($bulk['quotas'])
+                            <div class="form-grid form-grid-3">
+                                <div class="field">
+                                    <label for="bulk-daily">Daily limit</label>
+                                    <input id="bulk-daily" name="daily_limit" type="number" min="0" max="1000000" placeholder="No change">
+                                </div>
+                                <div class="field">
+                                    <label for="bulk-rpm">Requests per minute</label>
+                                    <input id="bulk-rpm" name="rpm_limit" type="number" min="0" max="10000" placeholder="No change">
+                                </div>
+                                <div class="field">
+                                    <label for="bulk-queue">Queue limit</label>
+                                    <input id="bulk-queue" name="queue_limit" type="number" min="0" max="8" placeholder="No change">
+                                </div>
+                            </div>
+                        @endif
+                    </x-bulk-dialog>
+                    @if ($bulk['status'])
+                        <x-bulk-dialog action="delete" title="Delete selected projects" trigger-label="Delete" trigger-class="btn btn-danger btn-sm" confirm-label="Archive projects" confirm-class="btn btn-danger">
+                            <p class="dialog-body">The selected projects are archived: their API keys stop working and requests are refused. Jobs, keys, usage and the audit trail are kept, so a project can be restored later by setting its status back to active.</p>
+                        </x-bulk-dialog>
+                    @endif
+                </x-bulk-bar>
+            </div>
+        @endif
+
         <div class="loading-bar" wire:loading.delay role="status">
             <span>Loading projects…</span>
         </div>
@@ -110,6 +167,7 @@
                         <caption class="visually-hidden">Projects</caption>
                         <thead>
                             <tr>
+                                @if ($canBulk)<th scope="col" class="col-check"><x-bulk-check form="bulk-projects" label="Select all projects on this page" /></th>@endif
                                 <th scope="col">Project</th>
                                 <th scope="col">Organization</th>
                                 <th scope="col">Environment</th>
@@ -121,6 +179,7 @@
                         <tbody>
                             @foreach ($projects as $project)
                                 <tr wire:key="project-{{ $project->id }}">
+                                    @if ($canBulk)<td class="col-check"><x-bulk-check form="bulk-projects" :value="$project->id" :label="'Select '.$project->name" /></td>@endif
                                     <th scope="row">
                                         <a href="{{ route('projects.show', $project->id) }}">{{ $project->name }}</a>
                                         <span class="cell-sub">{{ $project->slug }}</span>

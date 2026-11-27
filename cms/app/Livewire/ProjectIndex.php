@@ -66,11 +66,13 @@ class ProjectIndex extends Component
         }
         $this->previousCursors[] = $this->cursor;
         $this->cursor = Str::limit($this->nextCursor, 512, '');
+        $this->dispatch('bulk-reset');
     }
 
     public function previousPage(): void
     {
         $this->cursor = (string) (array_pop($this->previousCursors) ?? '');
+        $this->dispatch('bulk-reset');
     }
 
     public function clearFilters(): void
@@ -103,6 +105,7 @@ class ProjectIndex extends Component
                 'projects' => [], 'error' => null, 'unassigned' => true,
                 'organizations' => [], 'canFilterByOrganization' => false, 'filtered' => false,
                 'canCreate' => false, 'stats' => null, 'activeOrganizations' => [],
+                'bulk' => ['status' => false, 'environment' => false, 'quotas' => false],
             ]);
         }
 
@@ -148,6 +151,7 @@ class ProjectIndex extends Component
             'activeOrganizations' => array_values(array_filter($organizations, fn (Organization $o) => $o->status === 'active')),
             'canSetQuotas' => Gate::allows('project.change_quotas'),
             'canSetAllowlist' => Gate::allows('project.change_allowlist'),
+            'bulk' => $this->bulkPermissions(),
         ]);
     }
 
@@ -187,5 +191,22 @@ class ProjectIndex extends Component
     {
         $this->cursor = '';
         $this->previousCursors = [];
+        // Rows change: the bulk toolbar recounts the ticked boxes.
+        $this->dispatch('bulk-reset');
+    }
+
+    /**
+     * What the bulk toolbar may offer. Per-project checks happen again on submit
+     * (ProjectController::bulk) and on the gateway.
+     *
+     * @return array{status: bool, environment: bool, quotas: bool}
+     */
+    private function bulkPermissions(): array
+    {
+        return [
+            'status' => Gate::allows('project.change_status'),
+            'environment' => Gate::allows('project.edit_metadata'),
+            'quotas' => Gate::allows('project.change_quotas'),
+        ];
     }
 }

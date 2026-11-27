@@ -31,7 +31,7 @@ class AppearanceTest extends TestCase
     public function test_colours_font_and_density_apply_to_every_page(): void
     {
         $owner = User::factory()->owner()->create();
-        $this->save($owner)->assertRedirect('/settings')->assertSessionHasNoErrors();
+        $this->save($owner)->assertRedirect('/settings?tab=appearance')->assertSessionHasNoErrors();
 
         $html = $this->actingAs($owner)->get('/settings')->assertOk()->getContent();
         $this->assertStringContainsString('--burgundy:#1d4ed8', $html);

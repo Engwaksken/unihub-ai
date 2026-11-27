@@ -17,6 +17,7 @@ Scope legend: **All** = every organization/project; **Assigned** = projects in t
 | Create task / publish new task version | All | All | — | — |
 | View job metadata (never payloads by default) | All | All | Assigned | Assigned |
 | Cancel queued job / retry eligible failed job | All | All | Assigned | — |
+| Delete finished jobs (metadata and payloads; usage is kept) | All | All | — | — |
 | View usage & reports; CSV export | All | All | Assigned | Assigned |
 | View health; acknowledge alerts | All | All | — | view only |
 | Pause/resume admission (incident) | All | All | — | — |

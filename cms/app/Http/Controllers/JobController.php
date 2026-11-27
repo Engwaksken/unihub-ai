@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Jobs & queue (metadata only: payloads are never requested or shown) and
@@ -70,6 +71,49 @@ class JobController extends Controller
         $new = $this->mutate(fn () => $this->gateway($request)->mutateData('POST', '/jobs/'.rawurlencode(strtolower($job)).'/retry', ['reason' => trim($data['reason'])], $this->idempotencyKey($request)));
 
         return back()->with('status', 'Retry queued as job '.($new['id'] ?? '').'.');
+    }
+
+    /**
+     * Cancel, retry or delete the selected jobs. Cancel/retry go job by job (the
+     * gateway checks each job's real project against the assertion; a job outside
+     * the user's scope comes back as not found and is skipped). Delete removes
+     * finished jobs in one call and is limited to owners and ops admins.
+     */
+    public function bulk(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', Rule::in(['cancel', 'retry', 'delete'])],
+            'reason' => ['nullable', 'string', 'max:200'],
+        ]);
+        $ids = $this->selectedIds($request);
+        $client = $this->gateway($request);
+        $short = fn (string $id) => 'Job '.substr($id, 0, 8).'…';
+
+        if ($data['action'] === 'delete') {
+            abort_unless(Gate::allows('job.delete'), 403);
+            $result = $this->mutate(fn () => $client->mutateData('POST', '/jobs/delete', ['ids' => $ids], $this->idempotencyKey($request)));
+            $deleted = count($result['deleted'] ?? []);
+            $skipped = array_map(fn (array $s) => $short((string) ($s['id'] ?? '')).': '.(($s['reason'] ?? '') === 'not_finished'
+                ? 'still queued or running (cancel it first, or wait until it finishes)'
+                : 'not found or outside your projects'), $result['skipped'] ?? []);
+
+            return $this->bulkResult("Deleted {$deleted} ".Str::plural('job', $deleted).'. Usage totals are unchanged.', $skipped);
+        }
+
+        abort_unless(Gate::allows('job.manage'), 403);
+        $reason = trim((string) ($data['reason'] ?? ''));
+        if ($data['action'] === 'retry' && mb_strlen($reason) < 3) {
+            throw ValidationException::withMessages(['form' => ['Give a reason for the retry (at least 3 characters); it is recorded in the audit log.']]);
+        }
+
+        $cancel = $data['action'] === 'cancel';
+        [$done, $skipped] = $this->eachRow($ids, $short, fn (string $id) => $client->mutateData(
+            'POST', '/jobs/'.$id.($cancel ? '/cancel' : '/retry'), $cancel ? [] : ['reason' => $reason], $this->rowIdempotencyKey($request, $id),
+        ));
+
+        return $this->bulkResult($cancel
+            ? "Cancelled {$done} ".Str::plural('job', $done).'.'
+            : "Queued {$done} ".Str::plural('retry', $done).'.', $skipped);
     }
 
     /**

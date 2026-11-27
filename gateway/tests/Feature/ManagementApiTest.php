@@ -8,6 +8,7 @@ use App\Models\ApiKey;
 use App\Models\AuditEvent;
 use App\Models\HealthSample;
 use App\Models\Job;
+use App\Models\JobPayload;
 use App\Models\Organization;
 use App\Models\TaskVersion;
 use App\Services\ServiceProbe;
@@ -16,6 +17,7 @@ use App\Support\Base32;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -318,6 +320,36 @@ class ManagementApiTest extends TestCase
         $id = $this->submit($key)->json('job_id');
         $this->mgmt('POST', "/jobs/{$id}/cancel", [], ['project_manager'], [$p->id])->assertOk()->assertJsonPath('data.state', 'cancelled');
         $this->mgmt('POST', "/jobs/{$id}/cancel", [], ['auditor'], [$p->id])->assertStatus(403);
+    }
+
+    public function test_delete_finished_jobs_skips_active_ones_and_keeps_usage(): void
+    {
+        Http::fake(['*' => Http::response(['message' => ['content' => 'ok'], 'prompt_eval_count' => 5, 'eval_count' => 3])]);
+        [$p, $key] = $this->projectWithKey(['queue_limit' => 8]);
+        $done = $this->submit($key)->json('job_id');
+        Artisan::call('gateway:work', ['--stop-when-empty' => true]);
+        $this->assertSame('completed', Job::find($done)->state);
+        $queued = $this->submit($key)->json('job_id');
+        $usageBefore = DB::table('usage_events')->count();
+        $this->assertGreaterThan(0, $usageBefore);
+
+        // Project managers may cancel/retry but not delete; auditors neither.
+        $this->mgmt('POST', '/jobs/delete', ['ids' => [$done]], ['project_manager'], [$p->id])->assertStatus(403);
+        $this->mgmt('POST', '/jobs/delete', ['ids' => []])->assertStatus(422);
+        $this->mgmt('POST', '/jobs/delete', ['ids' => ['nope']])->assertStatus(422);
+
+        $unknown = (string) Str::uuid7();
+        $r = $this->mgmt('POST', '/jobs/delete', ['ids' => [$done, $queued, $unknown]], ['ops_admin'])->assertOk();
+        $this->assertSame([$done], $r->json('data.deleted'));
+        $this->assertEqualsCanonicalizing(
+            [['id' => $queued, 'reason' => 'not_finished'], ['id' => $unknown, 'reason' => 'not_found']],
+            $r->json('data.skipped'),
+        );
+        $this->assertNull(Job::find($done));
+        $this->assertNull(JobPayload::find($done));
+        $this->assertSame('queued', Job::find($queued)->state);
+        $this->assertSame($usageBefore, DB::table('usage_events')->count());
+        $this->assertTrue(AuditEvent::where('action', 'job.deleted')->where('target_id', $done)->exists());
     }
 
     // ---------- reports, health, alerts ----------

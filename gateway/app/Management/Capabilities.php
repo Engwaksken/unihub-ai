@@ -32,6 +32,7 @@ final class Capabilities
         'task.manage' => ['owner' => 'all', 'ops_admin' => 'all'],
         'job.view' => ['owner' => 'all', 'ops_admin' => 'all', 'project_manager' => 'assigned', 'auditor' => 'assigned'],
         'job.operate' => ['owner' => 'all', 'ops_admin' => 'all', 'project_manager' => 'assigned'],
+        'job.delete' => ['owner' => 'all', 'ops_admin' => 'all'],
         'usage.view' => ['owner' => 'all', 'ops_admin' => 'all', 'project_manager' => 'assigned', 'auditor' => 'assigned'],
         'health.view' => ['owner' => 'all', 'ops_admin' => 'all', 'auditor' => 'all'],
         'alert.ack' => ['owner' => 'all', 'ops_admin' => 'all'],

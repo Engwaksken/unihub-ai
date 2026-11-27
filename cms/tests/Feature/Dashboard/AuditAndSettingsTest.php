@@ -131,7 +131,7 @@ class AuditAndSettingsTest extends TestCase
 
         $this->actingAs($owner)->get('/settings')->assertOk()->assertSee('Save gateway settings')->assertSee('Global queued-job limit');
 
-        $this->actingAs($owner)->patch('/settings/gateway', $this->policyForm(['global_queue_limit' => 6]))->assertRedirect('/settings');
+        $this->actingAs($owner)->patch('/settings/gateway', $this->policyForm(['global_queue_limit' => 6]))->assertRedirect('/settings?tab=policy');
         Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r->data() === ['global_queue_limit' => 6] && $r->hasHeader('Idempotency-Key'));
     }
 
@@ -160,7 +160,7 @@ class AuditAndSettingsTest extends TestCase
 
         $this->actingAs($ops)->patch('/settings/portal', [
             'brand_name' => 'Unihub Staff', 'display_timezone' => 'Africa/Nairobi', 'notification_recipients' => "ops@example.test\nOnCall@Example.test",
-        ])->assertRedirect('/settings');
+        ])->assertRedirect('/settings?tab=portal');
 
         $settings = app(CmsSettings::class);
         $settings->flush();
