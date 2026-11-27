@@ -43,7 +43,8 @@ if [ ! -f /etc/mysql/mariadb.conf.d/60-witu.cnf ]; then
 fi
 
 echo "==> Verification"
-mariadb -N -e "SHOW GRANTS FOR '$USER'@'127.0.0.1';"
+# SHOW GRANTS includes the password hash; never print it.
+mariadb -N -e "SHOW GRANTS FOR '$USER'@'127.0.0.1';" | sed -E "s/PASSWORD '[^']*'/PASSWORD '<hidden>'/"
 mariadb -N -e "SELECT @@bind_address AS bind, @@skip_networking AS skip_net;"
 ss -ltn | grep -q ':3306 ' && ss -ltn | grep ':3306 '
 echo "Expect bind address 127.0.0.1 (or skip_networking=1). 0.0.0.0 or :: means 3306 is reachable from outside."
