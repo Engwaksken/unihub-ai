@@ -143,6 +143,8 @@ Route::middleware('auth')->group(function () {
                 ->middleware('can:settings.policy')->name('settings.policy');
             Route::patch('/settings/portal', [SettingsController::class, 'updateCms'])
                 ->middleware('can:settings.cms')->name('settings.cms');
+            Route::post('/settings/test-mail', [SettingsController::class, 'testMail'])
+                ->middleware(['can:settings.cms', 'throttle:5,1'])->name('settings.test-mail');
         });
 
         // Users & audit

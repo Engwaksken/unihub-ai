@@ -20,8 +20,9 @@
             <span class="visually-hidden">Toggle menu</span>
         </button>
         <a class="brand" href="{{ route('home') }}">
-            <span class="brand-mark" aria-hidden="true">U</span>
-            <span>{{ app(\App\Services\CmsSettings::class)->brandName() }}</span>
+            @php($brand = app(\App\Services\CmsSettings::class)->brandName())
+            <span class="brand-mark" aria-hidden="true">{{ mb_strtoupper(mb_substr($brand, 0, 1)) }}</span>
+            <span>{{ $brand }}</span>
         </a>
         <div class="topbar-user">
             <a href="{{ route('account.show') }}" class="topbar-link">

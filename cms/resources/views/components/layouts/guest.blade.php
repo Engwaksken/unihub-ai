@@ -13,8 +13,9 @@
     <a href="#main" class="skip-link">Skip to main content</a>
     <main id="main" @class(['guest-card', 'guest-card-wide' => $wide]) tabindex="-1">
         <div class="guest-brand">
-            <span class="brand-mark" aria-hidden="true">U</span>
-            <span>{{ app(\App\Services\CmsSettings::class)->brandName() }}</span>
+            @php($brand = app(\App\Services\CmsSettings::class)->brandName())
+            <span class="brand-mark" aria-hidden="true">{{ mb_strtoupper(mb_substr($brand, 0, 1)) }}</span>
+            <span>{{ $brand }}</span>
         </div>
         @if ($title)
             <h1 class="guest-title">{{ $title }}</h1>

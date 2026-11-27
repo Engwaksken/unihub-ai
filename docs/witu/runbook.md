@@ -388,3 +388,22 @@ Without the token the deploy still works with `--assets <zip>` (SFTP upload, ste
    - Manual rollback: `sudo witu-rollback-cms` lists the backups. Then run `sudo witu-rollback-cms /var/backups/witu-ai/cms-<ts>`, and add `--with-db` only if the bad release changed data.
 
 Git on the server always runs as `witu-deploy`, which owns the checkout. Running git as root there fails with "dubious ownership". `witu-deploy` can run `sudo witu-deploy-cms …` and `sudo witu-rollback-cms …`, and those are the only root commands it is allowed.
+
+---
+
+# Hardening and checks
+
+## Firewall (ufw)
+
+The preflight found the firewall off, so every public listener was reachable, including **8080** (Apache `staff.witulibrary.org`, the Koha staff site). Decide what library staff need, then:
+
+```bash
+sudo bash /var/www/witu-ai-source/infra/witu/firewall.sh --close-8080 --dry-run    # shows the rules only
+sudo bash /var/www/witu-ai-source/infra/witu/firewall.sh --close-8080              # or --keep-8080, or --8080-from <office/VPN CIDR>
+```
+
+SSH (the port sshd really uses) is opened first, then 80 and 443. Keep this MobaXterm session open, open a **second** one to confirm SSH still works, and check both websites from your PC. Undo: `sudo ufw disable`.
+
+## E-mail
+
+**Settings → Portal → Send test e-mail** sends a message to your own address with the live `MAIL_*` settings. A failure shows the mail server's answer (wrong host, port, scheme or password). For `mail.witulibrary.org` use port `465` with `MAIL_SCHEME=smtps`, or `587` with `MAIL_SCHEME=null`. After editing `.env`: `sudo -u witu-cms php8.4 /var/www/witu-ai/artisan config:cache && systemctl reload php8.4-fpm`.
