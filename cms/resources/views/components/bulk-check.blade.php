@@ -1,5 +1,5 @@
 @props([
-    // Id of the <x-bulk-bar> form.
+    // Id of the bulk-bar form.
     'form',
     // Row value (uuid); omit for the "select all on this page" header box.
     'value' => null,

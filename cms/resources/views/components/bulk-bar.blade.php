@@ -1,5 +1,5 @@
 @props([
-    // Form id. Row checkboxes (<x-bulk-check>) point at it with the form= attribute, so
+    // Form id. Row checkboxes (the bulk-check component) point at it with the form= attribute, so
     // they work inside a table that also holds per-row forms (forms cannot nest).
     'id',
     'action',
