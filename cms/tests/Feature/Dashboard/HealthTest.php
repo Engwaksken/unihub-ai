@@ -21,6 +21,8 @@ class HealthTest extends TestCase
             'cpu_pct' => 37.5, 'ram_used_pct' => 71.2, 'ram_total_mb' => 3900, 'ram_used_mb' => 2777, 'disk_used_pct' => 40.0,
             'queue_depth' => 2, 'running' => 1, 'worker_heartbeat_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
             'ollama_status' => 'loaded', 'loaded_model' => 'qwen2.5:1.5b', 'tls_expires_at' => now()->addDays(40)->utc()->format('Y-m-d\TH:i:s\Z'),
+            'swap_total_mb' => 2048, 'swap_used_mb' => 512, 'swap_used_pct' => 25.0,
+            'services' => [['name' => 'ollama', 'status' => 'active'], ['name' => 'mariadb', 'status' => 'failed']],
         ], $overrides);
     }
 
@@ -80,6 +82,35 @@ class HealthTest extends TestCase
         $this->assertStringContainsString('No telemetry sample has been received', $html);
         $this->assertGreaterThanOrEqual(6, substr_count($html, 'Unknown'));
         $this->assertDoesNotMatchRegularExpression('#metric-value">\s*0(\.0)?%#', $html);
+    }
+
+    public function test_swap_and_service_status_render(): void
+    {
+        $this->fakeGateway($this->current());
+
+        $this->actingAs(User::factory()->opsAdmin()->create())->get('/health')->assertOk()
+            ->assertSee('Swap used')->assertSee('25.0%')->assertSee('512 of 2,048 MB')
+            ->assertSee('<code>ollama</code>', false)->assertSee('Active')
+            ->assertSee('<code>mariadb</code>', false)->assertSee('Failed')
+            ->assertSee('Swap %');
+    }
+
+    public function test_host_without_swap_and_without_service_list(): void
+    {
+        $this->fakeGateway($this->current(['swap_total_mb' => 0, 'swap_used_mb' => 0, 'swap_used_pct' => null, 'services' => []]));
+
+        $this->actingAs(User::factory()->opsAdmin()->create())->get('/health')->assertOk()
+            ->assertSee('No swap')->assertSee('No service status reported');
+    }
+
+    public function test_older_gateway_without_swap_fields_shows_unknown(): void
+    {
+        $current = $this->current();
+        unset($current['swap_total_mb'], $current['swap_used_mb'], $current['swap_used_pct'], $current['services']);
+        $this->fakeGateway($current);
+
+        $html = $this->actingAs(User::factory()->opsAdmin()->create())->get('/health')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('#Swap used</dt>\s*<dd[^>]*>\s*Unknown#', $html);
     }
 
     public function test_auditor_sees_health_read_only(): void

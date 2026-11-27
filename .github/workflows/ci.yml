@@ -104,5 +104,5 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: for f in infra/scripts/*.sh infra/preflight/*.sh tests/load/*.sh; do bash -n "$f"; done
-      - run: shellcheck -S warning infra/scripts/*.sh infra/preflight/*.sh tests/load/*.sh
+      - run: for f in infra/scripts/*.sh infra/preflight/*.sh infra/witu/*.sh tests/load/*.sh; do bash -n "$f"; done
+      - run: shellcheck -S warning infra/scripts/*.sh infra/preflight/*.sh infra/witu/*.sh tests/load/*.sh

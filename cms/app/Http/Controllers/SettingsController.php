@@ -48,6 +48,7 @@ class SettingsController extends Controller
         'Alerts & telemetry' => [
             'alert_ram_pct' => ['label' => 'RAM alert threshold (%)', 'type' => 'integer', 'min' => 50, 'max' => 100],
             'alert_disk_pct' => ['label' => 'Disk alert threshold (%)', 'type' => 'integer', 'min' => 50, 'max' => 100],
+            'alert_swap_pct' => ['label' => 'Swap alert threshold (%)', 'type' => 'integer', 'min' => 10, 'max' => 100, 'help' => 'Swap growth while Ollama runs means the model no longer fits in RAM.'],
             'alert_heartbeat_seconds' => ['label' => 'Worker heartbeat alert after (s)', 'type' => 'integer', 'min' => 10, 'max' => 3600],
             'alert_tls_days' => ['label' => 'TLS expiry alert (days before)', 'type' => 'integer', 'min' => 1, 'max' => 90],
             'telemetry_stale_seconds' => ['label' => 'Telemetry stale after (s)', 'type' => 'integer', 'min' => 30, 'max' => 3600],

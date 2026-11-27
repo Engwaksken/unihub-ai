@@ -28,6 +28,7 @@ class Settings
         'monthly_hosting_cost_usd' => 'numeric|min:0|max:100000',
         'alert_ram_pct' => 'integer|min:50|max:100',
         'alert_disk_pct' => 'integer|min:50|max:100',
+        'alert_swap_pct' => 'integer|min:10|max:100',
         'alert_heartbeat_seconds' => 'integer|min:10|max:3600',
         'alert_tls_days' => 'integer|min:1|max:90',
         'telemetry_stale_seconds' => 'integer|min:30|max:3600',

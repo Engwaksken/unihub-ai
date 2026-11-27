@@ -28,7 +28,7 @@ class OpsController extends ManagementController
             ->orderBy('sampled_at')->get()
             ->map(fn (HealthSample $s) => [
                 'sampled_at' => BaseModel::iso($s->sampled_at), 'cpu_pct' => $s->cpu_pct, 'ram_used_pct' => $s->ram_used_pct,
-                'disk_used_pct' => $s->disk_used_pct, 'queue_depth' => $s->queue_depth,
+                'disk_used_pct' => $s->disk_used_pct, 'swap_used_pct' => Telemetry::swapPct($s), 'queue_depth' => $s->queue_depth,
             ])->all();
         $workers = DB::table('worker_heartbeats')->orderByDesc('heartbeat_at')->get()->map(fn ($w) => [
             'worker_id' => $w->worker_id, 'pid' => $w->pid, 'busy' => $w->current_job_id !== null,

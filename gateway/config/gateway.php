@@ -48,6 +48,10 @@ return [
 
     'tls_cert_path' => env('GATEWAY_TLS_CERT_PATH'),
 
+    // systemd units whose state is sampled with each telemetry run (audit G14). Comma separated.
+    // A unit reported inactive/failed opens a critical `service_down` alert.
+    'monitored_services' => array_values(array_filter(array_map('trim', explode(',', (string) env('GATEWAY_MONITORED_SERVICES', 'ollama,mariadb'))))),
+
     // Defaults for the settings table (PRD §08). All values provisional until benchmark.
     'defaults' => [
         'global_queue_limit' => 8,
@@ -66,6 +70,7 @@ return [
         'monthly_hosting_cost_usd' => 21.88,
         'alert_ram_pct' => 85,
         'alert_disk_pct' => 80,
+        'alert_swap_pct' => 50,
         'alert_heartbeat_seconds' => 60,
         'alert_tls_days' => 14,
         'telemetry_stale_seconds' => 120,

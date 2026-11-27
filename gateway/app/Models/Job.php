@@ -117,6 +117,7 @@ class Job extends BaseModel
             'tokens_in' => $this->tokens_in,
             'tokens_out' => $this->tokens_out,
             'error_code' => $this->error_code,
+            'error_transient' => $this->error_code === null ? null : (bool) $this->error_transient,
             'retry_of' => $this->retry_of,
             'request_id' => $this->request_id,
             'queued_at' => self::iso($this->queued_at),

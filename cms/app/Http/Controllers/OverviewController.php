@@ -35,6 +35,7 @@ class OverviewController extends Controller
                 'from' => $this->dayBoundary($filters['from'], false),
                 'to' => $this->dayBoundary($filters['to'], true),
                 'project_id' => $projectId,
+                'tz' => DisplayTime::zone(), // "today" and trend days follow the display time zone
             ]);
         } catch (GatewayUnavailableException|GatewayAuthenticationException $e) {
             $error = $e;

@@ -1,7 +1,7 @@
 {{-- Expects $rows (list|null), $meta, $filters, $error, $exportParams (array). --}}
 @php
     use App\Support\Fmt;
-    $groupLabel = ['day' => 'Day', 'project' => 'Project', 'model' => 'Model'][$filters['group_by']] ?? 'Group';
+    $groupLabel = \App\Http\Controllers\UsageController::GROUPS[$filters['group_by']] ?? 'Group';
     $tableId = 'usage-table';
 @endphp
 @if ($error)
@@ -10,7 +10,8 @@
     <x-empty-state title="No usage in this range" icon="chart"><p>No jobs finished between these dates.</p></x-empty-state>
 @else
     @php
-        $label = fn ($r) => $filters['group_by'] === 'project' ? (string) ($r['project_name'] ?? $r['key'] ?? '') : (string) ($r['key'] ?? '');
+        // Gateways before G7 send no label; fall back to the old project-name/key logic.
+        $label = fn ($r) => (string) ($r['label'] ?? ($filters['group_by'] === 'project' ? ($r['project_name'] ?? $r['key'] ?? '') : ($r['key'] ?? '')));
         $totals = ['requests' => 0, 'failed' => 0, 'cost' => null];
         foreach ($rows as $r) {
             $totals['requests'] += (int) ($r['requests'] ?? 0);
@@ -33,7 +34,7 @@
     </div>
 
     <x-chart :table-id="$tableId" :label="'Requests and failures by '.strtolower($groupLabel)" :spec="[
-        'type' => $filters['group_by'] === 'day' ? 'line' : 'bar',
+        'type' => in_array($filters['group_by'], ['day', 'week', 'month'], true) ? 'line' : 'bar',
         'labels' => array_map($label, $rows),
         'datasets' => [
             ['label' => 'Completed', 'data' => array_map(fn ($r) => $r['completed'] ?? null, $rows)],

@@ -37,6 +37,12 @@ class JobAdminController extends ManagementController
         return $this->page($request, $q, fn (Job $j) => $j->toMetadata());
     }
 
+    /** One job's metadata (audit G11). Unknown and out-of-scope ids are both 404; payloads are never returned. */
+    public function show(Request $request, string $id): JsonResponse
+    {
+        return $this->data($this->find($request, $id, 'job.view')->load('taskVersion.task', 'model')->toMetadata());
+    }
+
     public function cancel(Request $request, string $id, JobQueue $queue): JsonResponse
     {
         $job = $this->find($request, $id, 'job.operate');

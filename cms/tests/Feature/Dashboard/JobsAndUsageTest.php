@@ -59,6 +59,20 @@ class JobsAndUsageTest extends TestCase
             ->assertDontSee('SECRET PROMPT')->assertDontSee('SECRET OUTPUT');
     }
 
+    public function test_retry_is_offered_only_when_the_failure_was_transient(): void
+    {
+        $permanent = '6f1d8a8e-1111-4c4c-9a9a-0000000003e6';
+        $transient = '6f1d8a8e-1111-4c4c-9a9a-0000000003e7';
+        $this->fakeJobs([
+            $this->job(['id' => $permanent, 'state' => 'failed', 'error_code' => 'OUTPUT_INVALID', 'error_transient' => false]),
+            $this->job(['id' => $transient, 'state' => 'failed', 'error_code' => 'OLLAMA_TIMEOUT', 'error_transient' => true]),
+        ]);
+
+        $html = $this->actingAs(User::factory()->owner()->create())->get('/jobs')->assertOk()->getContent();
+        $this->assertStringContainsString('/jobs/'.$transient.'/retry', $html);
+        $this->assertStringNotContainsString('/jobs/'.$permanent.'/retry', $html);
+    }
+
     public function test_filters_are_sent_and_project_filter_is_scoped(): void
     {
         $this->fakeJobs([$this->job()]);
@@ -155,6 +169,7 @@ class JobsAndUsageTest extends TestCase
         Http::fake([
             self::GATEWAY.'/usage*' => Http::response(['data' => $this->usageRows(), 'meta' => ['cost_note' => 'Estimate: hosting cost for the period allocated by share of inference time.']]),
             self::GATEWAY.'/projects*' => $this->page([]),
+            self::GATEWAY.'/models*' => $this->page([]),
         ]);
 
         $this->actingAs(User::factory()->owner()->create())->get('/usage?group_by=day')->assertOk()
@@ -162,6 +177,69 @@ class JobsAndUsageTest extends TestCase
             ->assertSee('estimate')->assertSee('data-chart=', false)->assertSee('Export CSV');
 
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/usage?') && str_contains($r->url(), 'tz=Africa%2FKampala') && str_contains($r->url(), 'group_by=day'));
+    }
+
+    public function test_usage_filters_by_organization_key_and_model_with_period_grouping(): void
+    {
+        $org = '6f1d8a8e-1111-4c4c-9a9a-0000000000a1';
+        $key = '6f1d8a8e-1111-4c4c-9a9a-0000000000b1';
+        Http::fake([
+            self::GATEWAY.'/usage*' => Http::response(['data' => [
+                ['key' => $key, 'label' => 'Diary backend (uhk_live_ab12)', 'requests' => 4, 'completed' => 4, 'failed' => 0],
+            ], 'meta' => []]),
+            self::GATEWAY.'/projects/*/keys*' => $this->page([
+                ['id' => $key, 'label' => 'Diary backend', 'prefix' => 'uhk_live_ab12', 'status' => 'active'],
+            ]),
+            self::GATEWAY.'/projects?*' => $this->page([
+                $this->projectPayload(['id' => self::A, 'name' => 'Alpha', 'organization' => ['id' => $org, 'name' => 'WITU']]),
+                $this->projectPayload(['id' => self::B, 'name' => 'Beta', 'organization' => ['id' => '6f1d8a8e-1111-4c4c-9a9a-0000000000a2', 'name' => 'BOQ Ltd']]),
+            ]),
+            self::GATEWAY.'/models*' => $this->page([['tag' => 'qwen2.5:1.5b'], ['tag' => 'llama3.2:1b']]),
+        ]);
+
+        $this->actingAs(User::factory()->owner()->create())
+            ->get('/usage?group_by=key&project_id='.self::A.'&organization_id='.$org.'&api_key_id='.$key.'&model=qwen2.5:1.5b')
+            ->assertOk()
+            ->assertSee('Diary backend (uhk_live_ab12)')         // row label from the gateway
+            ->assertSee('All organizations')->assertSee('BOQ Ltd') // org options derived from visible projects
+            ->assertSee('All keys')->assertSee('All models')->assertSee('llama3.2:1b')
+            ->assertSee('API key')->assertSee('Month')
+            ->assertSee('api_key_id='.$key, false);              // export link keeps the filters
+
+        Http::assertSent(function (Request $r) use ($org, $key) {
+            if (! str_contains($r->url(), '/usage?')) {
+                return false;
+            }
+            parse_str((string) parse_url($r->url(), PHP_URL_QUERY), $q);
+
+            return $q['group_by'] === 'key' && $q['organization_id'] === $org && $q['api_key_id'] === $key
+                && $q['model'] === 'qwen2.5:1.5b' && $q['project_id'] === self::A;
+        });
+    }
+
+    public function test_usage_rejects_bad_filter_values_without_calling_gateway_usage(): void
+    {
+        Http::fake([self::GATEWAY.'/*' => $this->page([])]);
+        $owner = User::factory()->owner()->create();
+
+        $this->actingAs($owner)->get('/usage?group_by=hour')->assertSessionHasErrors('group_by');
+        $this->actingAs($owner)->get('/usage?api_key_id=not-a-uuid')->assertSessionHasErrors('api_key_id');
+        Http::assertNotSent(fn (Request $r) => str_contains($r->url(), '/usage'));
+    }
+
+    public function test_project_tab_offers_key_grouping_and_hides_keys_without_key_view(): void
+    {
+        Http::fake([
+            self::GATEWAY.'/usage*' => Http::response(['data' => $this->usageRows(), 'meta' => []]),
+            self::GATEWAY.'/projects/*/keys*' => $this->page([['id' => '6f1d8a8e-1111-4c4c-9a9a-0000000000b1', 'label' => 'k', 'prefix' => 'uhk_live_x', 'status' => 'active']]),
+            self::GATEWAY.'/projects/*' => Http::response(['data' => $this->projectPayload(['id' => self::A, 'name' => 'Alpha'])]),
+            self::GATEWAY.'/models*' => $this->page([]),
+        ]);
+
+        $this->actingAs(User::factory()->projectManager([self::A])->create())->get('/projects/'.self::A.'/usage?group_by=week')->assertOk()
+            ->assertSee('API key')->assertSee('All keys')->assertDontSee('All organizations');
+        $this->actingAs(User::factory()->projectManager([self::A])->create())->get('/projects/'.self::A.'/usage?group_by=project')
+            ->assertSessionHasErrors('group_by');
     }
 
     public function test_csv_export_streams_gateway_csv(): void
@@ -220,7 +298,9 @@ class JobsAndUsageTest extends TestCase
     {
         Http::fake([
             self::GATEWAY.'/usage*' => Http::response(['data' => $this->usageRows(), 'meta' => []]),
+            self::GATEWAY.'/projects/*/keys*' => $this->page([]),
             self::GATEWAY.'/projects/*' => Http::response(['data' => $this->projectPayload(['id' => self::A])]),
+            self::GATEWAY.'/models*' => $this->page([]),
         ]);
 
         $this->actingAs(User::factory()->auditor([self::A])->create())->get('/projects/'.self::A.'/usage')->assertOk()->assertSee('2026-11-25');
