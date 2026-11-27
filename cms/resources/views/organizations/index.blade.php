@@ -4,24 +4,36 @@
             <h1>Organizations</h1>
             <p class="muted">Organizations group projects. Data is read live from the gateway.</p>
         </div>
+        @can('organization.manage')
+            <x-modal name="create-organization" title="New organization" trigger-label="New organization">
+                <form method="POST" action="{{ route('organizations.store') }}" class="form">
+                    @csrf
+                    <x-idempotency-key />
+                    <input type="hidden" name="_modal" value="create-organization">
+                    <x-form-errors bag="createOrganization" />
+                    <div class="field">
+                        <label for="new-org-name">Name</label>
+                        <input id="new-org-name" name="name" type="text" maxlength="120" required
+                               value="{{ old('_modal') === 'create-organization' ? old('name') : '' }}"
+                               @error('name', 'createOrganization') aria-invalid="true" @enderror>
+                    </div>
+                    <div class="dialog-actions">
+                        <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Create organization</button>
+                    </div>
+                </form>
+            </x-modal>
+        @endcan
     </div>
 
-    @can('organization.manage')
-        <section class="card" aria-labelledby="new-org-heading">
-            <h2 id="new-org-heading">New organization</h2>
-            <form method="POST" action="{{ route('organizations.store') }}" class="form form-inline">
-                @csrf
-                <x-idempotency-key />
-                <x-form-errors bag="createOrganization" />
-                <div class="field">
-                    <label for="new-org-name">Name</label>
-                    <input id="new-org-name" name="name" type="text" maxlength="120" required value="{{ old('name') }}"
-                           @error('name', 'createOrganization') aria-invalid="true" @enderror>
-                </div>
-                <button type="submit" class="btn btn-primary">Create organization</button>
-            </form>
-        </section>
-    @endcan
+    @if ($stats)
+        <dl class="metrics" aria-label="Organization statistics">
+            <x-metric label="Organizations" :value="number_format($stats['total'])" />
+            <x-metric label="Active" :value="number_format($stats['active'])" />
+            <x-metric label="Archived" :value="number_format($stats['archived'])" />
+            <x-metric label="Projects" :value="number_format($stats['projects'])" hint="Across all organizations" />
+        </dl>
+    @endif
 
     <form method="GET" action="{{ route('organizations.index') }}" class="filters" role="search" aria-label="Filter organizations">
         <div class="field">

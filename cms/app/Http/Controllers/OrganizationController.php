@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Gateway\Data\Organization;
 use App\Gateway\Exceptions\GatewayAuthenticationException;
 use App\Gateway\Exceptions\GatewayUnavailableException;
+use App\Gateway\GatewayClient;
+use App\Gateway\GatewayPage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,11 +24,15 @@ class OrganizationController extends Controller
 
         $page = null;
         $error = null;
+        $stats = null;
         try {
-            $page = $this->gateway($request)->listOrganizations(
+            $client = $this->gateway($request);
+            $page = $client->listOrganizations(
                 ['q' => $filters['q'] ?? null, 'status' => $filters['status'] ?? null],
                 $filters['cursor'] ?? null,
             );
+            $unfiltered = empty($filters['q']) && empty($filters['status']) && empty($filters['cursor']) && $page->nextCursor === null;
+            $stats = $this->stats($client, $unfiltered ? $page : null);
         } catch (GatewayUnavailableException|GatewayAuthenticationException $e) {
             $error = $e;
         }
@@ -34,7 +41,34 @@ class OrganizationController extends Controller
             'page' => $page,
             'error' => $error,
             'filters' => $filters,
+            'stats' => $stats,
         ]);
+    }
+
+    /**
+     * Counts over every organization (not just this page), for the statistics cards.
+     *
+     * @param  GatewayPage<Organization>|null  $complete
+     * @return array{total: int, active: int, archived: int, projects: int}
+     */
+    private function stats(GatewayClient $client, ?GatewayPage $complete = null): array
+    {
+        $stats = ['total' => 0, 'active' => 0, 'archived' => 0, 'projects' => 0];
+        $cursor = null;
+        $pages = 0;
+        do {
+            // An unfiltered first page with no next page already holds every organization.
+            $page = $complete ?? $client->listOrganizations([], $cursor, 100);
+            $complete = null;
+            foreach ($page->items as $org) {
+                $stats['total']++;
+                $stats[$org->isArchived() ? 'archived' : 'active']++;
+                $stats['projects'] += (int) ($org->projectCount ?? 0);
+            }
+            $cursor = $page->nextCursor;
+        } while ($cursor !== null && ++$pages < 10);
+
+        return $stats;
     }
 
     public function store(Request $request): RedirectResponse

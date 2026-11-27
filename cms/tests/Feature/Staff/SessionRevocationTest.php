@@ -105,6 +105,7 @@ class SessionRevocationTest extends TestCase
         $owner = User::factory()->owner()->create(['name' => 'Olive Owner']);
         $victim = User::factory()->opsAdmin()->create(['name' => 'Victor Ops']);
         $this->storeSessionFor($victim);
+        Http::fake([self::GATEWAY.'/projects*' => $this->page([])]); // the invite/edit modals list projects
 
         $this->actingAs($owner)->get('/users')->assertOk()->assertSee('Victor Ops')->assertSee('Revoke sessions');
     }

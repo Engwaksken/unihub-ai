@@ -5,11 +5,29 @@
             <p class="muted">Tasks are fixed system prompts. A new version starts as a draft; a published version is live and can no longer be changed.</p>
         </div>
         @can('task.manage')
-            <a href="{{ route('tasks.create') }}" class="btn btn-primary">New task or version</a>
+            @unless ($error)
+                {{-- "New version" buttons below open this modal with their task key filled in. --}}
+                <button type="button" class="btn btn-primary" x-data x-on:click="$dispatch('new-task-version', { key: '' })" aria-haspopup="dialog">New task or version</button>
+                <x-modal name="task-version" title="New task or draft version" size="lg"
+                         description="Using an existing key adds a new draft version to that task. Drafts do not affect live traffic until published."
+                         x-on:new-task-version.window="$refs.dialog.showModal(); $nextTick(() => { const k = $refs.dialog.querySelector('#key'); k.value = $event.detail.key; k.readOnly = $event.detail.key !== ''; $refs.dialog.querySelector('#model_id').focus(); })">
+                    <form method="POST" action="{{ route('tasks.store') }}" class="form" x-data="{ busy: false }" x-on:submit="busy = true">
+                        @csrf
+                        <x-idempotency-key />
+                        <input type="hidden" name="_modal" value="task-version">
+                        <x-form-errors />
+                        @include('tasks._fields', ['models' => array_values($models), 'key' => null])
+                        <div class="dialog-actions">
+                            <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">Cancel</button>
+                            <button type="submit" class="btn btn-primary" x-bind:disabled="busy">Create draft version</button>
+                        </div>
+                    </form>
+                </x-modal>
+            @endunless
         @endcan
     </div>
     @include('models._tabs')
-    <x-form-errors />
+    @if (old('_modal') !== 'task-version') <x-form-errors /> @endif
 
     @if ($error)
         <x-gateway-unavailable :exception="$error" />
@@ -30,7 +48,8 @@
                         <p class="small">Live version: {{ $current !== null ? 'v'.$current : 'none published yet' }}</p>
                     </div>
                     @can('task.manage')
-                        <a class="btn btn-secondary btn-sm" href="{{ route('tasks.create', ['key' => $task['key'] ?? '']) }}">New version<span class="visually-hidden"> of {{ $task['key'] ?? '' }}</span></a>
+                        <a class="btn btn-secondary btn-sm" href="{{ route('tasks.create', ['key' => $task['key'] ?? '']) }}"
+                           x-data x-on:click.prevent="$dispatch('new-task-version', { key: @js($task['key'] ?? '') })">New version<span class="visually-hidden"> of {{ $task['key'] ?? '' }}</span></a>
                     @endcan
                 </div>
 

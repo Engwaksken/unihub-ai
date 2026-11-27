@@ -9,6 +9,7 @@ use App\Gateway\Exceptions\GatewayUnavailableException;
 use App\Models\User;
 use App\Services\StaffDirectory;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,12 +26,28 @@ class UserController extends Controller
 {
     public function __construct(private readonly StaffDirectory $staff) {}
 
-    public function index(): View
+    public const STATUSES = ['active' => 'Active', 'invited' => 'Invited', 'mfa-pending' => '2FA pending', 'disabled' => 'Disabled'];
+
+    public function index(Request $request): View
     {
-        $users = User::query()
-            ->with(['roleAssignments', 'memberships', 'invitations' => fn ($q) => $q->latest()])
-            ->orderBy('name')
-            ->paginate(50);
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'role' => ['nullable', Rule::in(Role::values())],
+            'status' => ['nullable', Rule::in(array_keys(self::STATUSES))],
+        ]);
+
+        $query = User::query()->with(['roleAssignments', 'memberships', 'invitations' => fn ($q) => $q->latest()]);
+        if (($q = trim((string) ($filters['q'] ?? ''))) !== '') {
+            $like = '%'.addcslashes($q, '%_\\').'%';
+            $query->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('email', 'like', $like));
+        }
+        if (! empty($filters['role'])) {
+            $query->whereHas('roleAssignments', fn ($r) => $r->where('role', $filters['role']));
+        }
+        if (! empty($filters['status'])) {
+            $this->whereStatus($query, $filters['status']);
+        }
+        $users = $query->orderBy('name')->paginate(25)->withQueryString();
 
         $sessionCounts = DB::table(config('session.table', 'sessions'))
             ->whereIn('user_id', $users->pluck('id'))
@@ -39,7 +56,59 @@ class UserController extends Controller
             ->get()
             ->keyBy('user_id');
 
-        return view('users.index', ['users' => $users, 'sessions' => $sessionCounts]);
+        [$projects, $projectsError] = $this->projectChoices($request);
+
+        return view('users.index', [
+            'users' => $users,
+            'sessions' => $sessionCounts,
+            'filters' => $filters,
+            'stats' => $this->stats(),
+            'roles' => Role::cases(),
+            'projects' => $projects,
+            'projectsError' => $projectsError,
+        ]);
+    }
+
+    /**
+     * Headline counts over every human account (the system account is excluded).
+     *
+     * @return array<string, int>
+     */
+    private function stats(): array
+    {
+        $count = function (?string $status): int {
+            $q = User::query()->where('is_system', false);
+            if ($status !== null) {
+                $this->whereStatus($q, $status);
+            }
+
+            return $q->count();
+        };
+
+        return [
+            'total' => $count(null),
+            'active' => $count('active'),
+            'invited' => $count('invited'),
+            'mfa-pending' => $count('mfa-pending'),
+            'disabled' => $count('disabled'),
+            'online' => (int) DB::table(config('session.table', 'sessions'))
+                ->whereNotNull('user_id')
+                ->where('last_activity', '>=', now()->subMinutes((int) config('session.lifetime', 120))->getTimestamp())
+                ->distinct()->count('user_id'),
+        ];
+    }
+
+    /** Mirrors the status badge logic in users/index.blade.php. */
+    private function whereStatus(Builder $q, string $status): void
+    {
+        match ($status) {
+            'disabled' => $q->whereNotNull('disabled_at'),
+            'invited' => $q->whereNull('disabled_at')->where('is_system', false)->whereNull('password_set_at'),
+            'mfa-pending' => $q->whereNull('disabled_at')->where('is_system', false)->whereNotNull('password_set_at')
+                ->where(fn ($w) => $w->whereNull('two_factor_secret')->orWhereNull('two_factor_confirmed_at')),
+            default => $q->whereNull('disabled_at')->where('is_system', false)->whereNotNull('password_set_at')
+                ->whereNotNull('two_factor_secret')->whereNotNull('two_factor_confirmed_at'),
+        };
     }
 
     public function create(Request $request): View
@@ -64,12 +133,12 @@ class UserController extends Controller
         [$roles, $memberships] = $this->parseAccess($data);
 
         try {
-            [$user] = $this->staff->invite($data['email'], trim($data['name']), $roles, $memberships, $request->user());
+            [$user, $token] = $this->staff->invite($data['email'], trim($data['name']), $roles, $memberships, $request->user(), notify: false);
         } catch (InvalidArgumentException $e) {
             throw ValidationException::withMessages(['roles' => [$e->getMessage()]]);
         }
 
-        return redirect()->route('users.index')->with('status', "Invitation sent to {$user->email}.");
+        return $this->afterInvitation($user, $token, "Invitation sent to {$user->email}.");
     }
 
     public function edit(Request $request, User $user): View
@@ -139,12 +208,30 @@ class UserController extends Controller
     public function resendInvitation(Request $request, User $user): RedirectResponse
     {
         try {
-            $this->staff->resendInvitation($user, $request->user());
+            $token = $this->staff->resendInvitation($user, $request->user());
         } catch (InvalidArgumentException $e) {
             return back()->withErrors(['form' => $e->getMessage()]);
         }
 
-        return back()->with('status', "A new invitation link was sent to {$user->email}.");
+        return $this->afterInvitation($user, $token, "A new invitation link was sent to {$user->email}.");
+    }
+
+    /**
+     * The account and link exist either way. If the e-mail fails, the owner sees
+     * why and gets the link once, to fix mail or hand it over another way.
+     */
+    private function afterInvitation(User $user, string $token, string $sentMessage): RedirectResponse
+    {
+        $error = $this->staff->sendInvitation($user, $token);
+        $redirect = redirect()->route('users.index');
+
+        return $error === null
+            ? $redirect->with('status', $sentMessage)
+            : $redirect->with('invitation_mail_failed', [
+                'email' => $user->email,
+                'error' => $error,
+                'link' => route('invitations.show', ['token' => $token]),
+            ]);
     }
 
     /**

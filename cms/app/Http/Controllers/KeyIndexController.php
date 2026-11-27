@@ -9,6 +9,7 @@ use App\Gateway\Exceptions\GatewayNotFoundException;
 use App\Gateway\Exceptions\GatewayUnavailableException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 /**
  * Global "API keys" page. The gateway has no cross-project key listing, so
@@ -22,7 +23,12 @@ class KeyIndexController extends Controller
 
     public function index(Request $request): View
     {
-        $request->validate(['cursor' => ['nullable', 'string', 'max:512']]);
+        $filters = $request->validate([
+            'cursor' => ['nullable', 'string', 'max:512'],
+            'q' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', 'in:active,expired,revoked'],
+        ]);
+        $status = $filters['status'] ?? null;
         $scope = Permissions::projectScope($request->user(), 'key.view');
 
         $groups = [];
@@ -32,7 +38,7 @@ class KeyIndexController extends Controller
         if ($scope !== []) {
             try {
                 $client = $this->gateway($request);
-                $page = $client->listProjects([], $request->query('cursor'), self::PER_PAGE);
+                $page = $client->listProjects(['q' => ($filters['q'] ?? '') !== '' ? $filters['q'] : null], $request->query('cursor'), self::PER_PAGE);
                 $next = $page->nextCursor;
                 foreach ($page->items as $project) {
                     /** @var Project $project */
@@ -41,7 +47,12 @@ class KeyIndexController extends Controller
                     }
                     try {
                         $keys = $client->list('/projects/'.rawurlencode($project->id).'/keys', [], null, 100);
-                        $groups[] = ['project' => $project, 'keys' => $keys->items, 'more' => $keys->nextCursor !== null];
+                        $items = $status === null ? $keys->items
+                            : array_values(array_filter($keys->items, fn (array $k) => ($k['status'] ?? null) === $status));
+                        if ($status !== null && $items === []) {
+                            continue;
+                        }
+                        $groups[] = ['project' => $project, 'keys' => $items, 'more' => $keys->nextCursor !== null];
                     } catch (GatewayNotFoundException) {
                         continue;
                     }
@@ -52,11 +63,36 @@ class KeyIndexController extends Controller
         }
 
         return view('keys.index', [
+            'filters' => $filters,
+            'stats' => $error === null ? self::stats($groups) : null,
             'groups' => $groups,
             'next' => $next,
             'cursor' => $request->query('cursor'),
             'error' => $error,
             'unassigned' => $scope === [],
         ]);
+    }
+
+    /**
+     * Counts over the keys shown on this page.
+     *
+     * @param  list<array{keys: list<array<string, mixed>>}>  $groups
+     * @return array<string, int>
+     */
+    private static function stats(array $groups): array
+    {
+        $soon = now()->addDays(14);
+        $stats = ['total' => 0, 'active' => 0, 'inactive' => 0, 'never_used' => 0, 'expiring' => 0];
+        foreach ($groups as $g) {
+            foreach ($g['keys'] as $k) {
+                $stats['total']++;
+                $active = ($k['status'] ?? null) === 'active';
+                $stats[$active ? 'active' : 'inactive']++;
+                $stats['never_used'] += $active && empty($k['last_used_at']) ? 1 : 0;
+                $stats['expiring'] += $active && ! empty($k['expires_at']) && Carbon::parse($k['expires_at'])->lte($soon) ? 1 : 0;
+            }
+        }
+
+        return $stats;
     }
 }
