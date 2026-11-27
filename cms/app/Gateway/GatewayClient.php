@@ -305,6 +305,19 @@ class GatewayClient
         }
 
         $error = is_array($json['error'] ?? null) ? $json['error'] : [];
+        if ($error === []) {
+            // Not the gateway's own error envelope: the web server or proxy in front of it
+            // answered (e.g. Apache 403 when it cannot read /opt/witu-gateway). Treat it like an
+            // outage so pages show "Gateway unreachable" with the reason instead of failing.
+            Log::warning('Gateway address answered without a gateway response.', [
+                'request_id' => $requestId, 'method' => $method, 'path' => $path, 'status' => $status,
+            ]);
+
+            throw new GatewayUnavailableException(
+                "The gateway address answered HTTP {$status} without a gateway response: the web server or proxy in front of the gateway refused or failed the request.",
+                $status, 'NOT_GATEWAY', [], $requestId,
+            );
+        }
         $code = is_string($error['code'] ?? null) ? $error['code'] : null;
         $message = is_string($error['message'] ?? null) && $error['message'] !== '' ? $error['message'] : "Gateway error (HTTP {$status}).";
         $details = is_array($error['details'] ?? null) ? $error['details'] : [];
