@@ -8,7 +8,7 @@
     'confirmClass' => 'btn btn-primary',
     'size' => 'md',
 ])
-{{-- One bulk action inside <x-bulk-bar>: a button that opens a dialog, whose confirm button submits the bar's form. --}}
+{{-- One bulk action inside the bulk-bar component: a button that opens a dialog, whose confirm button submits the bar's form. --}}
 <div class="confirm" x-data>
     <button type="button" class="{{ $triggerClass }}" x-on:click="$refs.dialog.showModal()" x-bind:disabled="count === 0" aria-haspopup="dialog">{{ $triggerLabel }}</button>
     <dialog x-ref="dialog" @class(['dialog', 'dialog-lg' => $size === 'lg']) aria-labelledby="bulk-{{ $action }}-title">

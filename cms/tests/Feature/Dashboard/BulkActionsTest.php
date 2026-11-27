@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -50,10 +51,14 @@ class BulkActionsTest extends TestCase
 
         $patches = Http::recorded(fn (Request $r) => $r->method() === 'PATCH');
         $this->assertCount(2, $patches);
+        $keys = [];
         foreach ($patches as [$request]) {
             $this->assertSame(['environment' => 'production', 'daily_limit' => 500], $request->data());
-            $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}:[0-9a-f-]{36}$/', $request->header('Idempotency-Key')[0]);
+            $keys[] = $request->header('Idempotency-Key')[0];
         }
+        // One UUID per row (derived from the form's key), so a resubmit replays each row.
+        $this->assertTrue(Str::isUuid($keys[0]) && Str::isUuid($keys[1]));
+        $this->assertNotSame($keys[0], $keys[1]);
     }
 
     public function test_bulk_edit_needs_at_least_one_field(): void

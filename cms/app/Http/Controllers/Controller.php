@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Ramsey\Uuid\Uuid;
 
 abstract class Controller
 {
@@ -114,7 +115,9 @@ abstract class Controller
      */
     protected function rowIdempotencyKey(Request $request, string $id): string
     {
-        return $this->idempotencyKey($request).':'.strtolower($id);
+        // A UUID (the gateway client only forwards UUID keys), derived from the
+        // form's key and the row id: same form + same row = same key.
+        return Uuid::uuid5($this->idempotencyKey($request), strtolower($id))->toString();
     }
 
     /**
