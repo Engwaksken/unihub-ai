@@ -8,6 +8,8 @@
     'fields' => [],
     // Error bag to look in (default bag unless the form uses a named one).
     'bag' => 'default',
+    // Tab to open first (e.g. from ?tab= after a filter form reloads the page); errors win.
+    'active' => null,
 ])
 @php
     $keys = array_keys($tabs);
@@ -23,7 +25,8 @@
             }
         }
     }
-    $initial = collect($keys)->first(fn ($k) => isset($withError[$k])) ?? ($keys[0] ?? '');
+    $initial = collect($keys)->first(fn ($k) => isset($withError[$k]))
+        ?? (in_array($active, $keys, true) ? $active : ($keys[0] ?? ''));
 @endphp
 <div {{ $attributes->except('aria-label')->merge(['class' => 'tabset']) }}
      x-data="{ tab: @js($initial), keys: @js($keys), jumped: false,

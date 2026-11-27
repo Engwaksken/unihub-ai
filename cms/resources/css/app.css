@@ -348,3 +348,42 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
     .dialog-actions .btn { flex: 1 1 auto; }
 }
 @media (prefers-reduced-motion: reduce) { .btn, .nav-link, input, select, textarea { transition: none; } .btn:active:not(:disabled) { transform: none; } }
+
+/* ---------- Sizing: statistics cards and form fields (pass 3) ---------- */
+.metrics { grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.metric { padding: .7rem .9rem; border-left-width: 3px; }
+.metric-label { font-size: .7rem; }
+.metric-value { font-size: 1.3rem; margin-top: .1rem; }
+.metric-hint { font-size: .75rem; margin-top: .15rem; }
+input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="number"], select, textarea { min-height: 38px; padding: .4rem .65rem; font-size: .925rem; border-radius: 7px; }
+textarea { min-height: 64px; }
+.field { gap: .25rem; }
+.field label { font-size: .85rem; }
+.form, .tabset, .tabset-panel { gap: .85rem; }
+.form-grid { gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.form-grid-3 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.filters .field { flex: 1 1 170px; max-width: 320px; }
+.filters .field:first-child { max-width: 420px; }
+.btn { min-height: 38px; padding: .45rem .95rem; }
+.btn-sm { min-height: 32px; padding: .25rem .65rem; }
+
+/* Compact density (Settings → Appearance) */
+.density-compact .main { padding-top: 1.25rem; }
+.density-compact .card { padding: .9rem 1.1rem; margin-bottom: 1rem; }
+.density-compact .table th, .density-compact .table td { padding: .5rem .75rem; }
+.density-compact .table-compact th, .density-compact .table-compact td { padding: .35rem .6rem; }
+.density-compact .metric { padding: .55rem .75rem; }
+.density-compact .metric-value { font-size: 1.15rem; }
+.density-compact input[type="text"], .density-compact input[type="email"], .density-compact input[type="password"], .density-compact input[type="search"], .density-compact input[type="number"], .density-compact select, .density-compact textarea { min-height: 34px; padding: .3rem .55rem; }
+.density-compact .btn { min-height: 34px; padding: .35rem .8rem; }
+.density-compact .btn-sm { min-height: 28px; padding: .2rem .55rem; }
+.density-compact .nav-link { padding: .45rem .7rem; }
+
+/* Appearance pieces */
+.brand-logo { display: block; height: 32px; width: auto; max-width: 160px; object-fit: contain; border-radius: 6px; }
+.guest-brand .brand-logo { height: 40px; }
+.brand-logo-preview { display: block; max-height: 40px; max-width: 200px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+.color-field { display: flex; align-items: center; gap: .6rem; }
+.color-field input[type="color"] { width: 52px; height: 38px; padding: 2px; border: 1px solid #b9afb4; border-radius: 7px; background: var(--surface); cursor: pointer; }
+.swatch { display: inline-block; width: 1rem; height: 1rem; border-radius: 4px; border: 1px solid rgba(0, 0, 0, .15); vertical-align: -2px; }
+input[type="file"] { font: inherit; font-size: .875rem; max-width: 100%; }

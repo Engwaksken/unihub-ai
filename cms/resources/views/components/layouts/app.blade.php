@@ -7,10 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ? $title.' · ' : '' }}{{ app(\App\Services\CmsSettings::class)->brandName() }}</title>
+    @include('partials.theme-head')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
-<body class="portal" x-data="{ navOpen: false }" x-on:keydown.escape.window="navOpen = false">
+<body @class(['portal', 'density-compact' => app(\App\Services\CmsSettings::class)->density() === 'compact']) x-data="{ navOpen: false }" x-on:keydown.escape.window="navOpen = false">
     <a href="#main" class="skip-link">Skip to main content</a>
 
     <header class="topbar">
@@ -20,9 +21,7 @@
             <span class="visually-hidden">Toggle menu</span>
         </button>
         <a class="brand" href="{{ route('home') }}">
-            @php($brand = app(\App\Services\CmsSettings::class)->brandName())
-            <span class="brand-mark" aria-hidden="true">{{ mb_strtoupper(mb_substr($brand, 0, 1)) }}</span>
-            <span>{{ $brand }}</span>
+            @include('partials.brand-mark')
         </a>
         <div class="topbar-user">
             <a href="{{ route('account.show') }}" class="topbar-link">

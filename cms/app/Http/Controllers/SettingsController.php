@@ -13,6 +13,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
@@ -83,6 +85,8 @@ class SettingsController extends Controller
             'canEditCms' => Gate::allows('settings.cms'),
             'cms' => $cms->all(),
             'timezones' => DateTimeZone::listIdentifiers(),
+            'fonts' => CmsSettings::FONTS,
+            'densities' => CmsSettings::DENSITIES,
         ]);
     }
 
@@ -147,6 +151,62 @@ class SettingsController extends Controller
         ], $request->user());
 
         return redirect()->route('settings.index')->with('status', 'Portal settings saved.');
+    }
+
+    /**
+     * Appearance: colours, font, density, logo and favicon. The primary colour carries
+     * white text (buttons, top bar), so it must keep a 4.5:1 contrast with white.
+     * Uploads are stored privately and served by BrandingController; SVG is refused
+     * because an SVG can carry scripts.
+     */
+    public function updateAppearance(Request $request, CmsSettings $cms): RedirectResponse
+    {
+        abort_unless(Gate::allows('settings.cms'), 403);
+
+        $data = $request->validateWithBag('appearance', [
+            'primary_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'accent_color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'font' => ['required', Rule::in(array_keys(CmsSettings::FONTS))],
+            'density' => ['required', Rule::in(array_keys(CmsSettings::DENSITIES))],
+            'logo' => ['nullable', 'file', 'mimes:png,jpg,jpeg,webp', 'max:1024', 'dimensions:max_width=2000,max_height=2000'],
+            'favicon' => ['nullable', 'file', 'mimes:png,ico', 'max:256'],
+            'remove_logo' => ['nullable', 'boolean'],
+            'remove_favicon' => ['nullable', 'boolean'],
+        ], [
+            'logo.mimes' => 'The logo must be a PNG, JPG or WebP image (SVG is not accepted).',
+            'favicon.mimes' => 'The favicon must be a PNG or ICO file.',
+        ]);
+
+        $primary = strtolower($data['primary_color']);
+        if (CmsSettings::contrast($primary, '#ffffff') < 4.5) {
+            throw ValidationException::withMessages(['primary_color' => [
+                'This colour is too light for white text on buttons and the top bar (contrast '.round(CmsSettings::contrast($primary, '#ffffff'), 1).':1; at least 4.5:1 is needed). Choose a darker shade.',
+            ]])->errorBag('appearance');
+        }
+
+        $changes = [
+            'primary_color' => $primary,
+            'accent_color' => strtolower($data['accent_color']),
+            'font' => $data['font'],
+            'density' => $data['density'],
+        ];
+        foreach (['logo' => 'logo_path', 'favicon' => 'favicon_path'] as $field => $key) {
+            $old = $cms->get($key);
+            if ($request->hasFile($field)) {
+                $file = $request->file($field);
+                $ext = $field === 'favicon' && $file->getClientOriginalExtension() === 'ico' ? 'ico' : ($file->guessExtension() ?: 'png');
+                $changes[$key] = $file->storeAs('branding', $field.'-'.Str::lower(Str::random(12)).'.'.$ext, 'local');
+            } elseif (! empty($data['remove_'.$field])) {
+                $changes[$key] = null;
+            }
+            if (array_key_exists($key, $changes) && is_string($old) && $old !== '' && $old !== $changes[$key]) {
+                Storage::disk('local')->delete($old);
+            }
+        }
+
+        $cms->update($changes, $request->user());
+
+        return redirect()->route('settings.index')->with('status', 'Appearance saved.');
     }
 
     /**
