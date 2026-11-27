@@ -45,7 +45,16 @@ class CreateSystemUser extends Command
             return self::FAILURE;
         }
 
-        $this->info($created ? 'System actor created.' : 'System actor already exists.');
+        $reenabled = false;
+        if ($user->isDisabled()) {
+            // Older releases let an owner disable it from the Users page; that silently stops
+            // the alert notifier and the gateway check, so this setup command puts it back.
+            $user->forceFill(['disabled_at' => null])->save();
+            Audit::record('staff.enabled', actor: null, subjectUser: $user, actorLabel: 'console', metadata: ['reason' => 'cms:system-user']);
+            $reenabled = true;
+        }
+
+        $this->info($created ? 'System actor created.' : ($reenabled ? 'System actor re-enabled (it had been disabled).' : 'System actor already exists.'));
         $this->table(['Field', 'Value'], [
             ['sub (user uuid)', $user->id],
             ['name', $user->name],

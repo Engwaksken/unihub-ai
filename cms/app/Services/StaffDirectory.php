@@ -227,6 +227,10 @@ class StaffDirectory
         if ($user->is($actor)) {
             throw new InvalidArgumentException('You cannot disable your own account.');
         }
+        if ($user->isSystem()) {
+            // It cannot sign in anyway; disabling it only stops gateway alerts and health checks.
+            throw new InvalidArgumentException('The system account cannot be disabled: the CMS uses it for scheduled gateway checks and alert e-mails.');
+        }
         if ($user->hasRole(Role::Owner) && $this->ownerCount(activeOnly: true) <= 1) {
             throw new InvalidArgumentException('The last active owner cannot be disabled.');
         }

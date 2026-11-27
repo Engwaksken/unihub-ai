@@ -191,7 +191,15 @@
                                         All of this user’s active sessions end immediately. They can sign in again with their password and authenticator.
                                     </x-confirm-dialog>
                                 @endif
-                                @if ($user->isDisabled())
+                                @if ($user->isSystem())
+                                    {{-- The scheduler's account: never disabled from here (see StaffDirectory::disable). --}}
+                                    @if ($user->isDisabled())
+                                        <form method="POST" action="{{ route('users.enable', $user) }}">
+                                            @csrf
+                                            <button type="submit" class="btn btn-secondary btn-sm">Enable</button>
+                                        </form>
+                                    @endif
+                                @elseif ($user->isDisabled())
                                     <form method="POST" action="{{ route('users.enable', $user) }}">
                                         @csrf
                                         <button type="submit" class="btn btn-secondary btn-sm">Enable</button>
