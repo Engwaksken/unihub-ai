@@ -1,0 +1,25 @@
+# WITU AI gateway v2 scheduler: telemetry sample every 30 s (CPU, RAM, swap, services,
+# Ollama) and the retention purge every 15 min.
+[Unit]
+Description=WITU AI gateway v2 scheduler (telemetry + retention purge)
+After=network-online.target
+
+[Service]
+Type=simple
+User=witu-gw
+Group=witu-gw
+WorkingDirectory=/opt/witu-gateway
+ExecStart=/usr/bin/php8.4 artisan schedule:work
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/witu-gateway /opt/witu-gateway/storage /opt/witu-gateway/bootstrap/cache
+ReadOnlyPaths=/etc/witu-gateway
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

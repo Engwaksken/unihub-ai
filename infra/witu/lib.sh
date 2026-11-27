@@ -11,6 +11,16 @@ APP_USER=witu-cms
 DEPLOY_USER=witu-deploy
 SITE_URL=https://ai.witulibrary.org
 
+# Gateway v2 (phase B, ADR 0002 W5): management surface on 127.0.0.1:8081 only.
+GW_APP=/opt/witu-gateway
+GW_STAGE=/var/www/.witu-gateway-stage
+GW_USER=witu-gw
+GW_DATA=/var/lib/witu-gateway
+GW_DB=$GW_DATA/gateway.sqlite
+GW_SECRETS=/etc/witu-gateway/secrets
+GW_URL=http://127.0.0.1:8081/internal/v1
+GW_UNITS="witu-gateway-worker witu-gateway-scheduler"
+
 log() { printf '\n==> %s\n' "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "run with sudo"; }
@@ -37,6 +47,27 @@ fix_permissions() {
   find "$APP/public" -type d -exec chmod o+rx {} +
   find "$APP/public" -type f ! -name '*.php' -exec chmod o+r {} +
 }
+
+gw_artisan() { (cd "$GW_APP" && sudo -u "$GW_USER" "$PHP" artisan "$@"); }
+
+# Same model as the CMS: code witu-deploy:witu-gw read-only to the app user;
+# storage/ and bootstrap/cache/ are the only writable paths in the code tree.
+fix_gw_permissions() {
+  chown -R "$DEPLOY_USER:$GW_USER" "$GW_APP"
+  find "$GW_APP" -path "$GW_APP/storage" -prune -o -path "$GW_APP/bootstrap/cache" -prune -o -type d -exec chmod 750 {} +
+  find "$GW_APP" -path "$GW_APP/storage" -prune -o -path "$GW_APP/bootstrap/cache" -prune -o -type f -exec chmod 640 {} +
+  chown -R "$GW_USER:$GW_USER" "$GW_APP/storage" "$GW_APP/bootstrap/cache"
+  find "$GW_APP/storage" "$GW_APP/bootstrap/cache" -type d -exec chmod 2770 {} +
+  find "$GW_APP/storage" "$GW_APP/bootstrap/cache" -type f -exec chmod 660 {} +
+  [ -f "$GW_APP/.env" ] && chown "$DEPLOY_USER:$GW_USER" "$GW_APP/.env" && chmod 640 "$GW_APP/.env"
+  chmod o+x "$GW_APP"
+  find "$GW_APP/public" -type d -exec chmod o+rx {} +
+  find "$GW_APP/public" -type f ! -name '*.php' -exec chmod o+r {} +
+}
+
+# HTTP status of the gateway's management surface without credentials: 401 proves Apache,
+# the internal vhost, PHP-FPM and Laravel are wired up and the surface check passed.
+gw_probe() { curl -s -o /dev/null -m 10 -w '%{http_code}' "$GW_URL/summary"; }
 
 # Database dump using the app's own credentials (root-run; password via env, not argv).
 dump_db() {

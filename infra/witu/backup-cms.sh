@@ -3,6 +3,7 @@
 #   - MariaDB dump of witu_ai (consistent, --single-transaction)
 #   - storage/app (uploaded logo/favicon etc.) and a copy of .env
 #   - the legacy gateway SQLite DB (online backup), while it is still in service
+#   - gateway v2 (phase B): its SQLite DB, secrets and .env
 # Keeps 14 days. Restore: sudo witu-rollback-cms --db-only /var/backups/witu-ai/nightly/<file>.sql.gz
 #
 # Copy backups OFF the VPS regularly (MobaXterm SFTP download, docs/witu/backup-restore.md):
@@ -21,6 +22,12 @@ tar -C "$APP" -czf "$OUT/storage-app-$TS.tar.gz" storage/app
 cp -p "$APP/.env" "$OUT/env-$TS"
 if [ -f /opt/witu-ai-gateway/database/gateway.db ]; then
   sqlite3 /opt/witu-ai-gateway/database/gateway.db ".backup '$OUT/legacy-gateway-$TS.db'" && gzip "$OUT/legacy-gateway-$TS.db"
+fi
+# Gateway v2 (phase B): SQLite online backup, plus its secrets. Without the secrets the
+# encrypted payloads and the API key digests in that database cannot be used.
+if [ -s "$GW_DB" ]; then
+  sqlite3 "$GW_DB" ".backup '$OUT/gateway-$TS.sqlite'" && gzip "$OUT/gateway-$TS.sqlite"
+  tar -C / -czf "$OUT/gateway-secrets-$TS.tar.gz" "${GW_SECRETS#/}" "${GW_APP#/}/.env"
 fi
 find "$OUT" -type f -mtime +14 -delete
 echo "$(date -u +%FT%TZ) nightly backup ok: $(du -sh "$OUT" | cut -f1) in $OUT"

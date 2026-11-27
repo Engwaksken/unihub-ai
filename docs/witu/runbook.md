@@ -232,7 +232,74 @@ curl -s https://ai.witulibrary.org/v1/models -H "Authorization: Bearer <app key>
 | Restore test | `sudo witu-rollback-cms` (list), then the restore drill in `backup-restore.md` | |
 | Reboot recovery (maintenance window) | `sudo reboot`, reconnect, `systemctl is-active apache2 php8.4-fpm mariadb ollama witu-ai-gateway` | all `active`; `/login` 200 |
 
-Phase A is complete when every row passes. Phase B (gateway v2 + CMS connection) starts only after the step 2 FastAPI source has been reviewed.
+Phase A is complete when every row passes.
+
+---
+
+# Phase B: gateway v2 beside FastAPI (management pages go live)
+
+Gateway v2 is installed on **127.0.0.1:8081 only**. The CMS manages it there (organizations, projects, keys, models, tasks, jobs, usage, server health). FastAPI keeps serving the apps' `/v1` traffic unchanged until phase C. Both can call Ollama, which serialises generations.
+
+New on the server: account `witu-gw`, code in `/opt/witu-gateway`, SQLite in `/var/lib/witu-gateway`, secrets in `/etc/witu-gateway/secrets`, PHP-FPM pool `witu-gateway`, units `witu-gateway-worker` and `witu-gateway-scheduler`, Apache site `witu-gateway-internal` (loopback). The nightly backup includes the gateway database and secrets.
+
+## Step B1: Update the ops scripts
+
+```bash
+sudo -u witu-deploy git -C /var/www/witu-ai-source fetch origin
+sudo -u witu-deploy git -C /var/www/witu-ai-source checkout --detach origin/main
+sudo bash /var/www/witu-ai-source/infra/witu/install-ops.sh
+```
+
+**Expected:** `Installed: witu-deploy-cms, witu-rollback-cms, witu-backup, witu-deploy-gateway …`
+
+## Step B2: Prepare the gateway (one time) 🛑
+
+```bash
+sudo bash /var/www/witu-ai-source/infra/witu/install-gateway.sh
+```
+
+**Expected:** the new directories listed, `witu-gateway.sock`, two units enabled, `Syntax OK`, `listening on 127.0.0.1:8081 (loopback only)`, `Done.` Apache is reloaded gracefully; the public sites stay up. If the configtest fails, Apache's previous configuration is restored automatically.
+
+## Step B3: First gateway deploy 🛑
+
+```bash
+sudo witu-deploy-gateway origin/main
+```
+
+The first run prints the gateway's `CREATE TABLE` SQL (organizations, projects, api_keys, models, tasks, jobs, usage_events, health_samples, alerts, audit_events, settings …) and stops with `The live gateway has NOT been changed.` They all go into the new, empty SQLite file. Approve:
+
+```bash
+sudo witu-deploy-gateway origin/main --migrate
+```
+
+**Expected (end):** `GET http://127.0.0.1:8081/internal/v1/summary without credentials -> 401 (expected 401)`, both units `active`, `Deployed gateway <sha>`.
+
+## Step B4: Connect the CMS 🛑
+
+```bash
+sudo bash /var/www/witu-ai-source/infra/witu/connect-gateway.sh
+```
+
+It creates the gateway's secrets, gives the gateway the CMS's public key (derived from the CMS key file; nothing is pasted), mints a management token and writes it straight into the CMS `.env` (never shown), then tests the connection.
+
+**Expected (end):** `OK: the gateway accepted the CMS token and signed assertion.` and `Ollama: idle` or `loaded`.
+
+## Step B5: First use
+
+1. **Models & tasks → Models → Refresh from Ollama.** `qwen2.5:0.5b` and `qwen2.5:1.5b` appear. Enable the one you will use.
+2. **Settings → Gateway policy:** set the inference values from the brief: max queue wait 30 s, global queue 8, max output tokens 256.
+3. **Organizations → New organization**, then **Projects → New project**.
+4. **Server & alerts:** CPU, RAM, swap, disk and the services table fill in within a minute.
+
+Apps keep using FastAPI's `/v1` until phase C, so keys created here are for gateway v2 only.
+
+## Gateway releases
+
+```bash
+sudo witu-deploy-gateway origin/main            # add --migrate after reviewing any SQL it prints
+```
+
+Rollback: the deploy restores the previous code automatically if its health check fails. Each deploy leaves `/var/backups/witu-ai/gateway-<ts>/` with `code.tar.gz` and an online SQLite copy `gateway.sqlite`.
 
 ---
 
