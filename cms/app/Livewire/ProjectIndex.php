@@ -11,6 +11,7 @@ use App\Gateway\Exceptions\GatewayValidationException;
 use App\Gateway\GatewayClient;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Url;
@@ -94,13 +95,14 @@ class ProjectIndex extends Component
 
         $error = null;
         $organizations = [];
+        $stats = null;
 
         if ($scope === []) {
             // Not assigned to any project: nothing to ask the gateway for.
             return view('livewire.project-index', [
                 'projects' => [], 'error' => null, 'unassigned' => true,
                 'organizations' => [], 'canFilterByOrganization' => false, 'filtered' => false,
-                'canCreate' => false,
+                'canCreate' => false, 'stats' => null, 'activeOrganizations' => [],
             ]);
         }
 
@@ -126,6 +128,7 @@ class ProjectIndex extends Component
                 $organizations = $client->listOrganizations([], null, 100)->items;
                 usort($organizations, fn (Organization $a, Organization $b) => strcasecmp($a->name, $b->name));
             }
+            $stats = $this->stats($client, $scope);
         } catch (GatewayUnavailableException|GatewayAuthenticationException $e) {
             $this->nextCursor = '';
             $error = 'unreachable';
@@ -141,7 +144,43 @@ class ProjectIndex extends Component
             'canFilterByOrganization' => Gate::allows('organization.view'),
             'filtered' => $search !== '' || $status !== '' || $organizationId !== '',
             'canCreate' => Gate::allows('project.create'),
+            'stats' => $stats,
+            'activeOrganizations' => array_values(array_filter($organizations, fn (Organization $o) => $o->status === 'active')),
+            'canSetQuotas' => Gate::allows('project.change_quotas'),
+            'canSetAllowlist' => Gate::allows('project.change_allowlist'),
         ]);
+    }
+
+    /**
+     * Project counts by status for the statistics cards, over every project the
+     * user may see (not just this page). Cached briefly per user so typing in the
+     * search box does not re-list everything.
+     *
+     * @param  list<string>|null  $scope
+     * @return array<string, int>
+     */
+    private function stats(GatewayClient $client, ?array $scope): array
+    {
+        return Cache::remember('project-stats:'.Auth::id(), 60, function () use ($client, $scope) {
+            $counts = array_fill_keys(['total', ...Project::STATUSES, 'production'], 0);
+            $allowed = $scope === null ? null : array_flip($scope);
+            $cursor = null;
+            $pages = 0;
+            do {
+                $page = $client->listProjects([], $cursor, 100);
+                foreach ($page->items as $p) {
+                    if ($allowed !== null && ! isset($allowed[$p->id])) {
+                        continue;
+                    }
+                    $counts['total']++;
+                    $counts[$p->status] = ($counts[$p->status] ?? 0) + 1;
+                    $counts['production'] += $p->environment === 'production' ? 1 : 0;
+                }
+                $cursor = $page->nextCursor;
+            } while ($cursor !== null && ++$pages < 10);
+
+            return $counts;
+        });
     }
 
     private function resetPaging(): void

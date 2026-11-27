@@ -11,9 +11,42 @@
             </p>
         </div>
         @if ($canCreate)
-            <a href="{{ route('projects.create') }}" class="btn btn-primary">New project</a>
+            {{-- wire:ignore keeps the dialog open while Livewire re-renders the list behind it. --}}
+            <div wire:ignore>
+                <x-modal name="create-project" title="New project" trigger-label="New project" size="lg">
+                    @if ($error === 'unreachable')
+                        <x-gateway-unavailable />
+                    @elseif ($activeOrganizations === [])
+                        <p class="dialog-body">A project belongs to an organization. Create or restore an organization first.</p>
+                        <div class="dialog-actions">
+                            @can('organization.view') <a class="btn btn-secondary" href="{{ route('organizations.index') }}">Go to organizations</a> @endcan
+                        </div>
+                    @else
+                        <form method="POST" action="{{ route('projects.store') }}" class="form" x-data="{ busy: false }" x-on:submit="busy = true">
+                            @csrf
+                            <x-idempotency-key />
+                            <input type="hidden" name="_modal" value="create-project">
+                            <x-form-errors />
+                            @include('projects._create_fields', ['organizations' => $activeOrganizations])
+                            <div class="dialog-actions">
+                                <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">Cancel</button>
+                                <button type="submit" class="btn btn-primary" x-bind:disabled="busy">Create project</button>
+                            </div>
+                        </form>
+                    @endif
+                </x-modal>
+            </div>
         @endif
     </div>
+
+    @if ($stats)
+        <dl class="metrics" aria-label="Project statistics">
+            <x-metric label="Projects" :value="number_format($stats['total'])" :hint="number_format($stats['production']).' in production'" />
+            <x-metric label="Active" :value="number_format($stats['active'] ?? 0)" />
+            <x-metric label="Disabled" :value="number_format($stats['disabled'] ?? 0)" hint="Requests refused" />
+            <x-metric label="Archived" :value="number_format($stats['archived'] ?? 0)" />
+        </dl>
+    @endif
 
     @if ($unassigned)
         <x-empty-state title="No projects assigned" icon="folder">

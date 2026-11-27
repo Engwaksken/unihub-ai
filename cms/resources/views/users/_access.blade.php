@@ -2,7 +2,13 @@
     Role checkboxes and the project membership table, shared by invite and edit.
     Expects: $roles (list<Role>), $selectedRoles (list<string>), $projects (list<Project>|null),
     $projectsError (?string), $currentMemberships (array uuid => role value).
+    Optional: $idPrefix (unique per form when several are on one page), $useOld (default true:
+    refill from old input; pass false for a modal that was not the one submitted).
 --}}
+@php
+    $idPrefix ??= '';
+    $useOld ??= true;
+@endphp
 <fieldset class="fieldset">
     <legend>Roles</legend>
     <div class="checkbox-list">
@@ -58,14 +64,14 @@
                 </thead>
                 <tbody>
                     @foreach ($rows as $uuid => $row)
-                        @php($current = old('memberships.'.$uuid, $currentMemberships[$uuid] ?? 'none'))
+                        @php($current = $useOld ? old('memberships.'.$uuid, $currentMemberships[$uuid] ?? 'none') : ($currentMemberships[$uuid] ?? 'none'))
                         <tr>
                             <th scope="row">
-                                <label for="m-{{ $uuid }}">{{ $row['label'] }}</label>
+                                <label for="{{ $idPrefix }}m-{{ $uuid }}">{{ $row['label'] }}</label>
                                 <span class="cell-sub">{{ $row['sub'] }}</span>
                             </th>
                             <td>
-                                <select id="m-{{ $uuid }}" name="memberships[{{ $uuid }}]">
+                                <select id="{{ $idPrefix }}m-{{ $uuid }}" name="memberships[{{ $uuid }}]">
                                     <option value="none" @selected($current === 'none')>Not assigned</option>
                                     <option value="project_manager" @selected($current === 'project_manager')>Project manager</option>
                                     <option value="auditor" @selected($current === 'auditor')>Auditor</option>

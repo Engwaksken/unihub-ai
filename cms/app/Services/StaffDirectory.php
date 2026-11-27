@@ -9,8 +9,10 @@ use App\Notifications\StaffInvitation;
 use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 /**
  * Staff lifecycle: invitations, role/membership changes, disabling and
@@ -65,6 +67,27 @@ class StaffDirectory
     }
 
     /**
+     * E-mail an invitation link. A mail failure (wrong SMTP settings, server
+     * down) must not lose the account or the link: it is logged and reported
+     * back so the owner can fix mail or hand the link over another way.
+     *
+     * @return string|null null when sent, otherwise a short reason
+     */
+    public function sendInvitation(User $user, string $token): ?string
+    {
+        try {
+            $user->notify(new StaffInvitation($token));
+
+            return null;
+        } catch (TransportExceptionInterface $e) {
+            Log::error('Invitation e-mail could not be sent.', ['user_id' => $user->getKey(), 'error' => $e->getMessage()]);
+            Audit::record('staff.invitation_mail_failed', subjectUser: $user, metadata: ['error' => mb_substr($e->getMessage(), 0, 200)]);
+
+            return mb_substr($e->getMessage(), 0, 200);
+        }
+    }
+
+    /**
      * Revoke any outstanding invitation and issue a new single-use token.
      */
     public function issueInvitation(User $user, ?User $invitedBy): string
@@ -83,7 +106,8 @@ class StaffDirectory
         return $token;
     }
 
-    public function resendInvitation(User $user, User $actor): void
+    /** Revokes the old link and returns a new token; the caller sends it (see sendInvitation). */
+    public function resendInvitation(User $user, User $actor): string
     {
         if ($user->isSystem()) {
             throw new InvalidArgumentException('System accounts cannot be invited.');
@@ -94,7 +118,8 @@ class StaffDirectory
 
         $token = $this->issueInvitation($user, $actor);
         Audit::record('staff.invitation_reissued', actor: $actor, subjectUser: $user);
-        $user->notify(new StaffInvitation($token));
+
+        return $token;
     }
 
     public function findUsableInvitation(string $plainToken): ?Invitation
