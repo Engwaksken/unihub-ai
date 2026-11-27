@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Deploy the WITU AI Laravel CMS from /var/www/witu-ai-source (git) into /var/www/witu-ai.
 #
-#   sudo witu-deploy-cms <git-ref> [--assets <unihub-cms-<sha>.zip>] [--migrate]
+#   sudo witu-deploy-cms <git-ref> [--assets <unihub-cms-<sha>.zip>] [--migrate] [--no-wait]
 #
 #   <git-ref>     tag, branch or commit that passed CI (e.g. origin/main, v1.0.0, 3f2c1ab)
 #   --assets      the CI "cms-bundle" artifact zip for THE SAME commit (its compiled public/build
 #                 is used; Node is never run on the VPS). Optional: without it the bundle is
 #                 downloaded from that commit's successful CI run on GitHub (needs the token in
 #                 /etc/witu-ai/github-token). With it, e.g. an SFTP-uploaded zip, nothing is downloaded.
+#   --no-wait     do not wait for a CI run that is still building (default: wait up to 20 minutes).
 #   --migrate     approve pending migrations. Without it the script prints the SQL that would run
 #                 (migrate --pretend) and stops before touching the live site.
 #
@@ -22,12 +23,13 @@ HERE="$(dirname "$(readlink -f "$0")")"   # resolves /usr/local/sbin symlinks
 . "$HERE/lib.sh"
 need_root
 
-REF="${1:?usage: witu-deploy-cms <git-ref> [--assets <bundle.zip>] [--migrate]}"; shift
-ASSETS=""; MIGRATE=0
+REF="${1:?usage: witu-deploy-cms <git-ref> [--assets <bundle.zip>] [--migrate] [--no-wait]}"; shift
+ASSETS=""; MIGRATE=0; WAIT=1200
 while [ $# -gt 0 ]; do
   case "$1" in
     --assets) ASSETS="${2:?}"; shift 2 ;;
     --migrate) MIGRATE=1; shift ;;
+    --no-wait) WAIT=0; shift ;;
     *) die "unknown option $1" ;;
   esac
 done
@@ -51,7 +53,7 @@ echo "commit $SHA: $(as_deploy git -C "$SRC" log -1 --format=%s)"
 if [ -z "$ASSETS" ]; then
   log "Downloading the CI bundle for $SHA from GitHub"
   mkdir -p "$TMP/bundle"
-  ASSETS=$(fetch_bundle "$(as_deploy git -C "$SRC" rev-parse "$SHA^{commit}")" "$TMP/bundle")
+  ASSETS=$(fetch_bundle "$(as_deploy git -C "$SRC" rev-parse "$SHA^{commit}")" "$TMP/bundle" "$WAIT")
   [ -n "$ASSETS" ] && [ -f "$ASSETS" ] || die "the downloaded artifact contained no unihub-cms-*.zip"
   echo "bundle: $(basename "$ASSETS")"
 fi

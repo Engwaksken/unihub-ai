@@ -87,27 +87,60 @@ dump_db() {
 GITHUB_REPO=Engwaksken/unihub-ai
 GITHUB_TOKEN_FILE=/etc/witu-ai/github-token
 
-# fetch_bundle <full-sha> <dest-dir>: download the cms-bundle artifact of the
-# successful CI run for exactly that commit; prints the path of the inner zip.
+# ci_state <header-file> <full-sha>: one line "state run_id detail" for that commit's CI run.
+#   ready <run> <artifact-id> | pending <run> - | missing - - | failed <run> <conclusion> | error - -
+ci_state() {
+  local hdr=$1 sha=$2 runs
+  runs=$(curl -fsS -H @"$hdr" "https://api.github.com/repos/$GITHUB_REPO/actions/runs?head_sha=$sha&per_page=10") || { echo "error - -"; return; }
+  printf '%s' "$runs" | SHA="$sha" python3 -c '
+import json, os, sys
+runs = json.load(sys.stdin).get("workflow_runs", [])
+if not runs:
+    print("missing - -"); sys.exit()
+run = runs[0]  # newest first
+if run.get("status") != "completed":
+    print("pending", run["id"], "-"); sys.exit()
+if run.get("conclusion") != "success":
+    print("failed", run["id"], run.get("conclusion") or "unknown"); sys.exit()
+print("success", run["id"], "-")' | tr -d '\r' | {
+    read -r state run detail
+    if [ "$state" != success ]; then echo "$state $run $detail"; return; fi
+    local arts
+    arts=$(curl -fsS -H @"$hdr" "https://api.github.com/repos/$GITHUB_REPO/actions/runs/$run/artifacts?per_page=20") || { echo "error - -"; return; }
+    printf '%s' "$arts" | NAME="unihub-cms-bundle-$sha" RUN="$run" python3 -c '
+import json, os, sys
+a = [x for x in json.load(sys.stdin).get("artifacts", []) if x.get("name") == os.environ["NAME"] and not x.get("expired")]
+print("ready", os.environ["RUN"], a[0]["id"]) if a else print("failed", os.environ["RUN"], "no-bundle-or-expired")' | tr -d '\r'
+  }
+}
+
+# fetch_bundle <full-sha> <dest-dir> [wait-seconds]: download the cms-bundle artifact of the
+# successful CI run for exactly that commit, waiting up to wait-seconds for the run to finish;
+# prints the path of the inner zip. Progress goes to stderr.
 fetch_bundle() {
-  local sha=$1 dest=$2 hdr json art_id run_id conclusion
+  local sha=$1 dest=$2 wait=${3:-0} hdr state run detail deadline
   [ -r "$GITHUB_TOKEN_FILE" ] || die "no --assets given and $GITHUB_TOKEN_FILE is missing; see docs/witu/runbook.md (Routine deploys)"
   # The token goes in a 0600 header file, never on a command line (visible in ps).
   hdr=$(mktemp); chmod 600 "$hdr"
   printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\nX-GitHub-Api-Version: 2022-11-28\n' \
     "$(tr -d '[:space:]' < "$GITHUB_TOKEN_FILE")" > "$hdr"
-  json=$(curl -fsS -H @"$hdr" "https://api.github.com/repos/$GITHUB_REPO/actions/artifacts?name=unihub-cms-bundle-$sha&per_page=5") \
-    || { rm -f "$hdr"; die "GitHub API request failed (token expired or lacks Actions: read?)"; }
-  read -r art_id run_id < <(printf '%s' "$json" | python3 -c '
-import json, sys
-a = [x for x in json.load(sys.stdin).get("artifacts", []) if not x.get("expired")]
-print(a[0]["id"], a[0]["workflow_run"]["id"]) if a else print("none none")' | tr -d '\r')
-  [ -n "$art_id" ] && [ "$art_id" != none ] || { rm -f "$hdr"; die "no CI bundle for $sha yet: wait for the CI run on GitHub to finish (bundles exist only for commits on main and expire after 30 days)"; }
-  conclusion=$(curl -fsS -H @"$hdr" "https://api.github.com/repos/$GITHUB_REPO/actions/runs/$run_id" \
-    | python3 -c 'import json, sys; print(json.load(sys.stdin).get("conclusion") or "in_progress")' | tr -d '\r') \
-    || { rm -f "$hdr"; die "could not read CI run $run_id from GitHub"; }
-  [ "$conclusion" = success ] || { rm -f "$hdr"; die "CI run $run_id for $sha is '$conclusion', not success: deploy refused"; }
-  curl -fsSL -H @"$hdr" -o "$dest/artifact.zip" "https://api.github.com/repos/$GITHUB_REPO/actions/artifacts/$art_id/zip" \
+  deadline=$(( $(date +%s) + wait ))
+  while :; do
+    read -r state run detail < <(ci_state "$hdr" "$sha")
+    case "$state" in
+      ready) break ;;
+      failed) rm -f "$hdr"; die "CI run $run for $sha ended '$detail', not success with a bundle: deploy refused" ;;
+      error) rm -f "$hdr"; die "GitHub API request failed (token expired or lacks Actions: read?)" ;;
+      *)
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+          rm -f "$hdr"
+          die "no CI bundle for $sha yet (CI $state): wait for the run on GitHub to finish, or re-run without --no-wait"
+        fi
+        echo "waiting for CI on ${sha:0:7} ($state)... checking again in 20 s" >&2
+        sleep 20 ;;
+    esac
+  done
+  curl -fsSL -H @"$hdr" -o "$dest/artifact.zip" "https://api.github.com/repos/$GITHUB_REPO/actions/artifacts/$detail/zip" \
     || { rm -f "$hdr"; die "bundle download failed"; }
   rm -f "$hdr"
   unzip -q -o "$dest/artifact.zip" -d "$dest" && rm -f "$dest/artifact.zip"

@@ -380,7 +380,7 @@ Without the token the deploy still works with `--assets <zip>` (SFTP upload, ste
    sudo -u witu-deploy git -C /var/www/witu-ai-source checkout --detach origin/main
    sudo bash /var/www/witu-ai-source/infra/witu/install-ops.sh
    ```
-3. Deploy. The script pulls `main`, downloads the CI bundle built for exactly that commit (refusing if that CI run did not succeed), and deploys. The first run prints any pending migration SQL and stops; re-run it with `--migrate` once you have reviewed the SQL:
+3. Deploy. The script pulls `main`, downloads the CI bundle built for exactly that commit (waiting up to 20 minutes while that CI run is still building; refusing if it did not succeed; `--no-wait` to stop at once), and deploys. The first run prints any pending migration SQL and stops; re-run it with `--migrate` once you have reviewed the SQL:
    ```bash
    sudo witu-deploy-cms origin/main
    ```
