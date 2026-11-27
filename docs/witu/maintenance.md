@@ -45,7 +45,7 @@ Starting values for 2 vCPU / 4 GB. **Tune them from measurements, not guesses.**
 |---|---|---|
 | Concurrent generations | 1 | gateway v2 single worker; `OLLAMA_NUM_PARALLEL=1` |
 | Loaded models | 1 | `OLLAMA_MAX_LOADED_MODELS=1` (in the `ollama.service` override) |
-| Context length | 2048 | `num_ctx` in gateway requests |
+| Context length | 4096 | `OLLAMA_NUM_CTX` in `/opt/witu-gateway/.env` (sent as `num_ctx`); about 115 MB of RAM for qwen2.5:1.5b |
 | Max waiting requests | 8 | CMS → Settings → `global_queue_limit` (phase B) |
 | Queue wait timeout | 30 s | CMS → Settings → `queue_wait_max_seconds` (default is 120: change it in phase B) |
 | Max output tokens | 256 cap; 128 as the per-task default the brief asks for | Settings → `max_output_tokens` (cap); each task version's output limit (CMS → Tasks) |

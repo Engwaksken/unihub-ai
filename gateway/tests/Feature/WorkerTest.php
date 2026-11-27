@@ -48,7 +48,7 @@ class WorkerTest extends TestCase
 
             return $r->url() === 'http://127.0.0.1:11434/api/chat'
                 && $b['stream'] === false && $b['model'] === 'qwen2.5:1.5b'
-                && $b['options']['num_ctx'] === 2048 && $b['options']['num_thread'] === 2
+                && $b['options']['num_ctx'] === 4096 && $b['options']['num_thread'] === 2
                 && $b['options']['num_predict'] <= 256
                 && $b['messages'][0]['role'] === 'system' && $b['messages'][1]['content'] === 'Plan my study day'
                 && ! isset($b['tools']);
