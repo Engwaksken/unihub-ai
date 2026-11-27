@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $title ? $title.' · ' : '' }}{{ app(\App\Services\CmsSettings::class)->brandName() }}</title>
+    @include('partials.theme-head')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
 </head>
@@ -13,9 +14,7 @@
     <a href="#main" class="skip-link">Skip to main content</a>
     <main id="main" @class(['guest-card', 'guest-card-wide' => $wide]) tabindex="-1">
         <div class="guest-brand">
-            @php($brand = app(\App\Services\CmsSettings::class)->brandName())
-            <span class="brand-mark" aria-hidden="true">{{ mb_strtoupper(mb_substr($brand, 0, 1)) }}</span>
-            <span>{{ $brand }}</span>
+            @include('partials.brand-mark')
         </div>
         @if ($title)
             <h1 class="guest-title">{{ $title }}</h1>

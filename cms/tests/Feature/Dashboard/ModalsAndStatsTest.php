@@ -113,6 +113,10 @@ class ModalsAndStatsTest extends TestCase
         $this->metric($html, 'Expiring within 14 days', 1);
         $this->metric($html, 'Active, never used', 1);
 
+        // One table for all projects, with a project column and a manage link per row.
+        $this->assertSame(1, substr_count($html, '<caption class="visually-hidden">API keys by project</caption>'));
+        $this->assertSame(2, substr_count($html, '>Manage<span class="visually-hidden"> keys for Diary'));
+
         $this->actingAs($owner)->get('/keys?q=dia&status=revoked')->assertOk()
             ->assertSee('uhk_live_bb')->assertDontSee('uhk_live_aa');
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/projects?') && str_contains($r->url(), 'q=dia'));

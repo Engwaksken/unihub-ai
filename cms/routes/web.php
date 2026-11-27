@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AuditController;
+use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\JobController;
@@ -37,6 +38,9 @@ Route::redirect('/dashboard', '/');
 Route::redirect('/api-keys', '/keys');
 
 // Single-use, expiring set-password links (invitations and bootstrap owner).
+Route::get('/branding/{kind}', [BrandingController::class, 'show'])
+    ->whereIn('kind', ['logo', 'favicon'])->name('branding');
+
 Route::get('/invitations/{token}', [InvitationController::class, 'show'])
     ->middleware('throttle:30,1')->name('invitations.show');
 Route::post('/invitations/{token}', [InvitationController::class, 'accept'])
@@ -143,6 +147,8 @@ Route::middleware('auth')->group(function () {
                 ->middleware('can:settings.policy')->name('settings.policy');
             Route::patch('/settings/portal', [SettingsController::class, 'updateCms'])
                 ->middleware('can:settings.cms')->name('settings.cms');
+            Route::patch('/settings/appearance', [SettingsController::class, 'updateAppearance'])
+                ->middleware('can:settings.cms')->name('settings.appearance');
             Route::post('/settings/test-mail', [SettingsController::class, 'testMail'])
                 ->middleware(['can:settings.cms', 'throttle:5,1'])->name('settings.test-mail');
         });

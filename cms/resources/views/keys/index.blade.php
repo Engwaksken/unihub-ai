@@ -45,39 +45,55 @@
     @elseif ($groups === [])
         <x-empty-state :title="$hasFilters ? 'No keys match these filters' : 'No projects on this page'" icon="key"><p>{{ $hasFilters ? 'Try a different project name or status.' : 'There are no projects to show.' }}</p></x-empty-state>
     @else
-        @foreach ($groups as $group)
-            @php($project = $group['project'])
-            <section class="card" aria-labelledby="kp-{{ $loop->index }}">
-                <div class="section-head">
-                    <h2 id="kp-{{ $loop->index }}">{{ $project->name }} <span class="muted small">{{ $project->slug }}</span></h2>
-                    <a class="btn btn-secondary btn-sm" href="{{ route('projects.keys', $project->id) }}">
-                        {{ \Illuminate\Support\Facades\Gate::allows('key.manage', $project->id) ? 'Manage keys' : 'View keys' }}<span class="visually-hidden"> for {{ $project->name }}</span>
-                    </a>
-                </div>
-                @if ($group['keys'] === [])
-                    <p class="muted">No keys.</p>
-                @else
-                    <div class="table-wrap">
-                        <table class="table table-compact">
-                            <caption class="visually-hidden">Keys for {{ $project->name }}</caption>
-                            <thead><tr><th scope="col">Prefix</th><th scope="col">Label</th><th scope="col">Status</th><th scope="col">Expires</th><th scope="col">Last used</th></tr></thead>
-                            <tbody>
-                                @foreach ($group['keys'] as $key)
-                                    <tr>
-                                        <th scope="row"><code>{{ $key['prefix'] ?? '' }}</code></th>
-                                        <td>{{ $key['label'] ?? '—' }}</td>
-                                        <td><x-status-badge :status="(string) ($key['status'] ?? 'unknown')" /></td>
-                                        <td>@if (! empty($key['expires_at'])) <x-time :value="$key['expires_at']" /> @else <span class="muted">Never</span> @endif</td>
-                                        <td>@if (! empty($key['last_used_at'])) <x-time :value="$key['last_used_at']" /> @else <span class="muted">Never used</span> @endif</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                    @if ($group['more']) <p class="muted small">More keys exist; open the project to see all of them.</p> @endif
-                @endif
-            </section>
-        @endforeach
+        <div class="table-wrap">
+            <table class="table table-compact">
+                <caption class="visually-hidden">API keys by project</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Project</th>
+                        <th scope="col">Prefix</th>
+                        <th scope="col">Label</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Expires</th>
+                        <th scope="col">Last used</th>
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($groups as $group)
+                        @php($project = $group['project'])
+                        @php($manage = \Illuminate\Support\Facades\Gate::allows('key.manage', $project->id))
+                        @forelse ($group['keys'] as $key)
+                            <tr>
+                                <th scope="row">
+                                    <a href="{{ route('projects.keys', $project->id) }}">{{ $project->name }}</a>
+                                    <span class="cell-sub">{{ $project->slug }}@if ($loop->last && $group['more']) · more keys on the project page @endif</span>
+                                </th>
+                                <td><code>{{ $key['prefix'] ?? '' }}</code></td>
+                                <td>{{ $key['label'] ?? '—' }}</td>
+                                <td><x-status-badge :status="(string) ($key['status'] ?? 'unknown')" /></td>
+                                <td>@if (! empty($key['expires_at'])) <x-time :value="$key['expires_at']" /> @else <span class="muted">Never</span> @endif</td>
+                                <td>@if (! empty($key['last_used_at'])) <x-time :value="$key['last_used_at']" /> @else <span class="muted">Never used</span> @endif</td>
+                                <td class="row-actions">
+                                    <a class="btn btn-secondary btn-sm" href="{{ route('projects.keys', $project->id) }}">{{ $manage ? 'Manage' : 'View' }}<span class="visually-hidden"> keys for {{ $project->name }}</span></a>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <th scope="row">
+                                    <a href="{{ route('projects.keys', $project->id) }}">{{ $project->name }}</a>
+                                    <span class="cell-sub">{{ $project->slug }}</span>
+                                </th>
+                                <td colspan="5" class="muted">No keys</td>
+                                <td class="row-actions">
+                                    <a class="btn btn-secondary btn-sm" href="{{ route('projects.keys', $project->id) }}">{{ $manage ? 'Issue key' : 'View' }}<span class="visually-hidden"> for {{ $project->name }}</span></a>
+                                </td>
+                            </tr>
+                        @endforelse
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
     @endif
 
     @if (! $error)

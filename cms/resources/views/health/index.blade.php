@@ -40,6 +40,18 @@
     @if ($error)
         <x-gateway-unavailable :exception="$error" />
     @else
+        @php
+            $downServices = collect($services)->filter(fn ($s) => in_array($s['status'] ?? null, ['inactive', 'failed'], true))->count();
+            $healthTabs = [
+                'current' => 'Current state',
+                'services' => 'Services'.($downServices ? ' ('.$downServices.' down)' : ''),
+                'history' => 'History',
+                'workers' => 'Workers',
+                'alerts' => 'Alerts'.($alerts->isEmpty() ? '' : ' ('.count($alerts->items).')'),
+            ];
+        @endphp
+        <x-tabs name="health" aria-label="Server and alerts" :tabs="$healthTabs" :active="request()->query('tab')">
+        <x-tab-panel tabs="health" key="current">
         <section class="card" aria-labelledby="current-heading">
             <div class="section-head">
                 <h2 id="current-heading">Current state</h2>
@@ -123,6 +135,8 @@
             @endcan
         </section>
 
+        </x-tab-panel>
+        <x-tab-panel tabs="health" key="services">
         <section class="card" aria-labelledby="services-heading">
             <h2 id="services-heading">Services</h2>
             @if ($services === [])
@@ -152,11 +166,14 @@
             @endif
         </section>
 
+        </x-tab-panel>
+        <x-tab-panel tabs="health" key="history">
         <section class="card" aria-labelledby="history-heading">
             <div class="section-head">
                 <h2 id="history-heading">History</h2>
                 <form method="GET" action="{{ route('health.index') }}" class="inline-form">
                     <input type="hidden" name="status" value="{{ $filters['status'] }}">
+                    <input type="hidden" name="tab" value="history">
                     <label for="hours" class="small">Window</label>
                     <select id="hours" name="hours">
                         @foreach ([6 => '6 hours', 24 => '24 hours', 72 => '3 days', 168 => '7 days'] as $h => $text)
@@ -204,6 +221,8 @@
             @endif
         </section>
 
+        </x-tab-panel>
+        <x-tab-panel tabs="health" key="workers">
         <section class="card" aria-labelledby="workers-heading">
             <h2 id="workers-heading">Workers</h2>
             @if ($workers === [])
@@ -231,11 +250,14 @@
             @endif
         </section>
 
+        </x-tab-panel>
+        <x-tab-panel tabs="health" key="alerts">
         <section class="card" aria-labelledby="alerts-heading">
             <div class="section-head">
                 <h2 id="alerts-heading">Alerts</h2>
                 <form method="GET" action="{{ route('health.index') }}" class="inline-form">
                     <input type="hidden" name="hours" value="{{ $filters['hours'] }}">
+                    <input type="hidden" name="tab" value="alerts">
                     <label for="alert-status" class="small">Status</label>
                     <select id="alert-status" name="status">
                         @foreach (['active' => 'Open & acknowledged', 'open' => 'Open', 'acknowledged' => 'Acknowledged', 'resolved' => 'Resolved'] as $value => $text)
@@ -277,9 +299,11 @@
                     </table>
                 </div>
                 @if ($alerts->nextCursor)
-                    <nav class="pager" aria-label="Pagination"><a class="btn btn-secondary btn-sm" href="{{ route('health.index', ['status' => $filters['status'], 'hours' => $filters['hours'], 'cursor' => $alerts->nextCursor]) }}">Older alerts</a></nav>
+                    <nav class="pager" aria-label="Pagination"><a class="btn btn-secondary btn-sm" href="{{ route('health.index', ['status' => $filters['status'], 'hours' => $filters['hours'], 'cursor' => $alerts->nextCursor, 'tab' => 'alerts']) }}">Older alerts</a></nav>
                 @endif
             @endif
         </section>
+        </x-tab-panel>
+        </x-tabs>
     @endif
 </x-layouts.app>

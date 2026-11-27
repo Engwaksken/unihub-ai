@@ -113,6 +113,23 @@ class HealthTest extends TestCase
         $this->assertMatchesRegularExpression('#Swap used</dt>\s*<dd[^>]*>\s*Unknown#', $html);
     }
 
+    public function test_sections_are_tabs_and_filters_return_to_their_tab(): void
+    {
+        $this->fakeGateway($this->current(), [$this->alert()]);
+        $ops = User::factory()->opsAdmin()->create();
+
+        $html = $this->actingAs($ops)->get('/health')->assertOk()->getContent();
+        foreach (['current', 'services', 'history', 'workers', 'alerts'] as $tab) {
+            $this->assertStringContainsString('id="health-tab-'.$tab.'"', $html);
+        }
+        $this->assertStringContainsString("x-data=\"{ tab: 'current'", $html);
+        $this->assertStringContainsString('Services (1 down)', $html); // mariadb failed in the fixture
+        $this->assertStringContainsString('<input type="hidden" name="tab" value="alerts">', $html);
+
+        $this->assertStringContainsString("x-data=\"{ tab: 'alerts'", $this->actingAs($ops)->get('/health?tab=alerts')->getContent());
+        $this->assertStringContainsString("x-data=\"{ tab: 'current'", $this->actingAs($ops)->get('/health?tab=bogus')->getContent());
+    }
+
     public function test_auditor_sees_health_read_only(): void
     {
         $this->fakeGateway($this->current(), [$this->alert()], 'paused');
