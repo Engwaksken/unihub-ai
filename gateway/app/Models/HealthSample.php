@@ -13,6 +13,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property float|null $ram_used_pct
  * @property int|null $ram_total_mb
  * @property int|null $ram_used_mb
+ * @property int|null $swap_total_mb
+ * @property int|null $swap_used_mb
+ * @property array<int, array{name: string, status: string}>|null $services
  * @property float|null $disk_used_pct
  * @property int $queue_depth
  * @property int $running
@@ -35,6 +38,7 @@ class HealthSample extends Model
             'sampled_at' => 'immutable_datetime',
             'worker_heartbeat_at' => 'immutable_datetime',
             'tls_expires_at' => 'immutable_datetime',
+            'services' => 'array',
         ];
     }
 }

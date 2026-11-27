@@ -55,9 +55,9 @@
 | G8 | URL names `/dashboard`, `/api-keys` | Done in this change: redirects to `/` → Overview and to `/keys` | `cms/routes/web.php`, `UrlAliasTest` |
 | G9 | `/health` → FastAPI | **Conflict:** `/health` is the CMS *Server & alerts* page | FastAPI health is published at **`/v1/health`** instead (ADR 0002 §Routing). |
 | G10 | Inference settings from the brief (30 s queue wait, 8 waiting, 256 max output) | Ops | Set them in CMS → Settings once gateway v2 is connected. Defaults today are 120 s and 8; max output is already 256. |
-| G11 | Gateway gaps reported earlier: `error_transient` in job metadata, `tz` on `/summary`, `GET /jobs/{id}` for management | Missing | Phase C backlog |
+| G11 | Gateway gaps reported earlier: `error_transient` in job metadata, `tz` on `/summary`, `GET /jobs/{id}` for management | **Done** (2026-11-27) | Gateway: `Job::toMetadata`, `ReportController` (`tz` on `/summary` and `/usage`), `JobAdminController::show` (unknown and out-of-scope ids are both 404). CMS: Retry is offered only when `error_transient` is not `false`; Overview sends the display zone. Tested both sides. |
 | G12 | Queue worker for the CMS | Not required: no `ShouldQueue` classes | Only the scheduler cron is installed. |
-| G14 | Swap usage and per-service status (Ollama, FastAPI, MariaDB) on the monitoring page | Missing | Phase C (`Telemetry` reads `/proc/meminfo` SwapTotal/SwapFree; service checks via `systemctl is-active`). |
+| G14 | Swap usage and per-service status (Ollama, FastAPI, MariaDB) on the monitoring page | **Done** (2026-11-27); live once gateway v2 runs (phase B) | Gateway: `Telemetry` samples SwapTotal/SwapFree; `ServiceProbe` runs `systemctl is-active -- <unit>` (argv, no shell, unit names validated) for `GATEWAY_MONITORED_SERVICES`. New alerts `swap_high` (setting `alert_swap_pct`, default 50) and `service_down` (critical; `unknown` never fires). Additive migration `2026_11_27_000001`. CMS: Swap metric, swap in history, Services table, swap threshold in Settings. On WITU set `GATEWAY_MONITORED_SERVICES=ollama,mariadb,apache2,php8.4-fpm,<FastAPI unit>`. |
 | G13 | phpMyAdmin | Optional | `docs/witu/database-access.md`. The recommended path is an SSH tunnel plus a desktop client. A localhost-only phpMyAdmin is documented as an alternative. |
 
 ## 4. Migrations and seeders reviewed (Phase Three)

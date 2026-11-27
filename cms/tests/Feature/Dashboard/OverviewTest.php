@@ -109,7 +109,8 @@ class OverviewTest extends TestCase
             }
             parse_str(parse_url($r->url(), PHP_URL_QUERY), $q);
 
-            return $q['from'] === '2026-11-19T21:00:00Z' && $q['to'] === '2026-11-26T20:59:59Z';
+            return $q['from'] === '2026-11-19T21:00:00Z' && $q['to'] === '2026-11-26T20:59:59Z'
+                && $q['tz'] === 'Africa/Kampala'; // "today" on the gateway uses the display zone (G11)
         });
     }
 

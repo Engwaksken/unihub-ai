@@ -24,9 +24,11 @@ class ReportController extends ManagementController
         $actor = $this->actor($request);
         $actor->authorize('summary.view');
         [$from, $to] = $this->range($request);
+        $tz = $this->timezone($request);
         $scope = $this->projectScope($request, 'summary.view');
         $now = CarbonImmutable::now('UTC');
-        $dayStart = $now->startOfDay();
+        // "Today" and the trend's day buckets follow the caller's time zone (audit G11).
+        $dayStart = $now->setTimezone($tz)->startOfDay()->utc();
 
         $jobs = function () use ($scope) {
             $q = Job::query();
@@ -45,7 +47,7 @@ class ReportController extends ManagementController
             $projects->whereIn('id', $scope ?: ['__none__']);
         }
 
-        $rows = $reporting->usage($from, $to, $scope, 'day');
+        $rows = $reporting->usage($from, $to, $scope, 'day', self::offsetMinutes($tz));
         $latest = $telemetry->latest();
         $stale = $telemetry->isStale($latest);
         $totalMs = DB::table('usage_events')->whereBetween('created_at', [BaseModel::dbTime($from), BaseModel::dbTime($to)]);
@@ -57,6 +59,7 @@ class ReportController extends ManagementController
         return $this->data([
             'generated_at' => BaseModel::iso($now),
             'range' => ['from' => BaseModel::iso($from), 'to' => BaseModel::iso($to)],
+            'tz' => $tz->getName(),
             'active_projects' => $projects->count(),
             'requests_today' => (int) array_sum($todayStates->all()),
             'completion_rate' => $finished > 0 ? round(((int) ($todayStates['completed'] ?? 0)) / $finished, 4) : null,
@@ -82,10 +85,9 @@ class ReportController extends ManagementController
         $q = $this->validate($request->query(), [
             'group_by' => 'nullable|in:day,project,model',
             'format' => 'nullable|in:json,csv',
-            'tz' => 'nullable|timezone:all',
         ]);
         $groupBy = $q['group_by'] ?? 'day';
-        $offset = isset($q['tz']) ? intdiv((new DateTimeZone($q['tz']))->getOffset(new \DateTime('now', new DateTimeZone('UTC'))), 60) : 0;
+        $offset = self::offsetMinutes($this->timezone($request));
         $rows = $reporting->usage($from, $to, $this->projectScope($request, 'usage.view'), $groupBy, $offset);
 
         if (($q['format'] ?? 'json') === 'csv') {
@@ -100,6 +102,19 @@ class ReportController extends ManagementController
             'from' => BaseModel::iso($from), 'to' => BaseModel::iso($to), 'group_by' => $groupBy,
             'cost_note' => 'Estimate: hosting cost for the period allocated by share of inference time.',
         ]]);
+    }
+
+    /** Optional IANA `tz` query parameter; UTC when absent. */
+    private function timezone(Request $request): DateTimeZone
+    {
+        $q = $this->validate($request->query(), ['tz' => 'nullable|timezone:all']);
+
+        return new DateTimeZone($q['tz'] ?? 'UTC');
+    }
+
+    private static function offsetMinutes(DateTimeZone $tz): int
+    {
+        return intdiv($tz->getOffset(new \DateTime('now', new DateTimeZone('UTC'))), 60);
     }
 
     /** @return string[]|null null = unrestricted */

@@ -54,7 +54,8 @@
                                     The job is removed from the queue and will not run. The client sees it as cancelled.
                                 </x-confirm-dialog>
                             @endif
-                            @if ($canOperate && $state === 'failed')
+                            {{-- Older gateways omit error_transient; then the gateway alone decides. --}}
+                            @if ($canOperate && $state === 'failed' && ($job['error_transient'] ?? true) !== false)
                                 <div x-data class="confirm">
                                     <button type="button" class="btn btn-secondary btn-sm" x-on:click="$refs.retry.showModal()" aria-haspopup="dialog">Retry</button>
                                     <dialog x-ref="retry" class="dialog" aria-labelledby="retry-{{ $loop->index }}-title">

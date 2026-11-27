@@ -59,6 +59,20 @@ class JobsAndUsageTest extends TestCase
             ->assertDontSee('SECRET PROMPT')->assertDontSee('SECRET OUTPUT');
     }
 
+    public function test_retry_is_offered_only_when_the_failure_was_transient(): void
+    {
+        $permanent = '6f1d8a8e-1111-4c4c-9a9a-0000000003e6';
+        $transient = '6f1d8a8e-1111-4c4c-9a9a-0000000003e7';
+        $this->fakeJobs([
+            $this->job(['id' => $permanent, 'state' => 'failed', 'error_code' => 'OUTPUT_INVALID', 'error_transient' => false]),
+            $this->job(['id' => $transient, 'state' => 'failed', 'error_code' => 'OLLAMA_TIMEOUT', 'error_transient' => true]),
+        ]);
+
+        $html = $this->actingAs(User::factory()->owner()->create())->get('/jobs')->assertOk()->getContent();
+        $this->assertStringContainsString('/jobs/'.$transient.'/retry', $html);
+        $this->assertStringNotContainsString('/jobs/'.$permanent.'/retry', $html);
+    }
+
     public function test_filters_are_sent_and_project_filter_is_scoped(): void
     {
         $this->fakeJobs([$this->job()]);

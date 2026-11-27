@@ -10,8 +10,10 @@ use App\Models\HealthSample;
 use App\Models\Job;
 use App\Models\Organization;
 use App\Models\TaskVersion;
+use App\Services\ServiceProbe;
 use App\Services\Telemetry;
 use App\Support\Base32;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -290,9 +292,20 @@ class ManagementApiTest extends TestCase
         Artisan::call('gateway:work', ['--stop-when-empty' => true]);
         $this->assertSame('failed', Job::find($id)->state);
 
+        // G11: one job's metadata, with error_transient so the CMS only offers Retry when it can work.
+        $one = $this->mgmt('GET', "/jobs/{$id}", [], ['auditor'], [$p->id])->assertOk()->json('data');
+        $this->assertSame('failed', $one['state']);
+        $this->assertTrue($one['error_transient']);
+        $this->assertStringNotContainsString('SECRET-PROMPT-TEXT', json_encode($one));
+        $other = $this->project();
+        $this->mgmt('GET', "/jobs/{$id}", [], ['auditor'], [$other->id])->assertStatus(404); // out of scope: existence not revealed
+        $this->mgmt('GET', '/jobs/'.Str::uuid7())->assertStatus(404);
+        $this->mgmt('GET', '/jobs/not-a-uuid')->assertStatus(404);
+
         $ollamaUp = true;
         $new = $this->mgmt('POST', "/jobs/{$id}/retry", ['reason' => 'Ollama restarted'])->assertStatus(201)->json('data');
         $this->assertSame($id, $new['retry_of']);
+        $this->assertNull($new['error_transient']); // no error yet
         $this->mgmt('POST', "/jobs/{$id}/retry", ['reason' => 'again'])->assertStatus(409);
         Artisan::call('gateway:work', ['--stop-when-empty' => true]);
         $this->assertSame('completed', Job::find($new['id'])->state);
@@ -361,6 +374,72 @@ class ManagementApiTest extends TestCase
         $health = $this->mgmt('GET', '/health')->assertOk()->json('data.current');
         $this->assertFalse($health['stale']);
         $this->assertNull($health['cpu_pct']); // not measured → unknown
+    }
+
+    public function test_summary_today_and_trend_follow_tz(): void
+    {
+        // 22:30 UTC on 26 Nov is 01:30 on 27 Nov in Nairobi (UTC+3).
+        $this->travelTo(CarbonImmutable::parse('2026-11-26T22:30:00Z'));
+        Http::fake(['*' => Http::response(['message' => ['content' => 'ok'], 'prompt_eval_count' => 1, 'eval_count' => 1])]);
+        [, $key] = $this->projectWithKey();
+        $this->travelTo(CarbonImmutable::parse('2026-11-26T20:00:00Z')); // 23:00 Nairobi, 26 Nov
+        $this->submit($key);
+        Artisan::call('gateway:work', ['--stop-when-empty' => true]);
+        $this->travelTo(CarbonImmutable::parse('2026-11-26T22:30:00Z'));
+
+        $utc = $this->mgmt('GET', '/summary?from=2026-11-20T00:00:00Z')->assertOk()->json('data');
+        $this->assertSame('UTC', $utc['tz']);
+        $this->assertSame(1, $utc['requests_today']);
+        $this->assertSame('2026-11-26', $utc['trend'][0]['day']);
+
+        $eat = $this->mgmt('GET', '/summary?from=2026-11-20T00:00:00Z&tz=Africa/Nairobi')->assertOk()->json('data');
+        $this->assertSame('Africa/Nairobi', $eat['tz']);
+        $this->assertSame(0, $eat['requests_today']); // it is already the 27th in Nairobi
+        $this->assertSame('2026-11-26', $eat['trend'][0]['day']);
+
+        $this->mgmt('GET', '/summary?tz=Mars/Olympus')->assertStatus(422);
+    }
+
+    public function test_swap_and_service_status_sampled_and_alerted(): void
+    {
+        $info = "MemTotal:  4000000 kB\nMemFree: 100 kB\nMemAvailable:  1000000 kB\nSwapCached: 0 kB\nSwapTotal:  2097152 kB\nSwapFree:  1048576 kB\n";
+        $this->assertSame(['total' => 3906, 'used' => 2930, 'swap_total' => 2048, 'swap_used' => 1024], Telemetry::parseMeminfo($info));
+        $noSwap = Telemetry::parseMeminfo("MemTotal: 2048 kB\nMemAvailable: 1024 kB\n");
+        $this->assertNull($noSwap['swap_total']);
+        $this->assertNull(Telemetry::parseMeminfo('garbage'));
+
+        $sample = HealthSample::create(['host_id' => 'h', 'sampled_at' => now(), 'swap_total_mb' => 2048, 'swap_used_mb' => 1536,
+            'queue_depth' => 0, 'running' => 0, 'worker_heartbeat_at' => now(), 'ollama_status' => 'loaded',
+            'services' => [['name' => 'ollama', 'status' => 'active'], ['name' => 'mariadb', 'status' => 'failed'], ['name' => 'x', 'status' => 'unknown']]]);
+        app(Telemetry::class)->evaluate($sample->fresh());
+
+        $open = collect($this->mgmt('GET', '/alerts?status=open')->json('data'))->keyBy('type');
+        $this->assertSame('Swap usage 75%', $open['swap_high']['message']);
+        $this->assertSame('critical', $open['service_down']['severity']);
+        $this->assertSame('Service not running: mariadb', $open['service_down']['message']); // "unknown" is not an outage
+
+        $current = $this->mgmt('GET', '/health')->assertOk()->json('data.current');
+        $this->assertEquals(75.0, $current['swap_used_pct']);
+        $this->assertSame(2048, $current['swap_total_mb']);
+        $this->assertSame('failed', $current['services'][1]['status']);
+
+        // A host without swap is "no swap", not 0 % or 100 %.
+        $none = HealthSample::create(['host_id' => 'h', 'sampled_at' => now(), 'swap_total_mb' => 0, 'swap_used_mb' => 0,
+            'queue_depth' => 0, 'running' => 0, 'worker_heartbeat_at' => now(), 'ollama_status' => 'loaded', 'services' => []]);
+        $this->assertNull(Telemetry::swapPct($none));
+        app(Telemetry::class)->evaluate($none->fresh());
+        $types = array_column($this->mgmt('GET', '/alerts?status=resolved')->json('data'), 'type');
+        $this->assertContains('swap_high', $types);
+        $this->assertContains('service_down', $types);
+    }
+
+    public function test_service_probe_rejects_unsafe_unit_names(): void
+    {
+        $probe = new ServiceProbe;
+        $this->assertSame('unknown', $probe->status('ollama; rm -rf /'));
+        $this->assertSame('unknown', $probe->status('--help'));
+        config(['gateway.monitored_services' => ['bad name']]);
+        $this->assertSame([['name' => 'bad name', 'status' => 'unknown']], $probe->statuses());
     }
 
     public function test_heartbeat_missing_alert_when_no_worker(): void

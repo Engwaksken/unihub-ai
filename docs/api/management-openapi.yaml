@@ -23,8 +23,8 @@ security:
 paths:
   /summary:
     get:
-      summary: Overview aggregates
-      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' } ]
+      summary: Overview aggregates ("today" and trend days follow tz)
+      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' }, { $ref: '#/components/parameters/Tz' } ]
       responses:
         '200':
           description: Aggregates. Unknown metrics are null, never 0.
@@ -34,6 +34,7 @@ paths:
                 type: object
                 properties:
                   generated_at: { type: string, format: date-time }
+                  tz: { type: string, description: IANA zone used for day boundaries }
                   active_projects: { type: integer }
                   requests_today: { type: integer }
                   completion_rate: { type: number, nullable: true }
@@ -125,6 +126,9 @@ paths:
       summary: Job metadata (no payloads)
       parameters: [ { $ref: '#/components/parameters/ProjectFilter' }, { name: state, in: query, schema: { type: string } }, { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/Cursor' } ]
       responses: { '200': { $ref: '#/components/responses/Page' } }
+  /jobs/{id}:
+    parameters: [ { $ref: '#/components/parameters/Id' } ]
+    get: { summary: "One job's metadata incl. error_transient (no payloads)", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
   /jobs/{id}/cancel:
     parameters: [ { $ref: '#/components/parameters/Id' } ]
     post: { summary: Cancel queued job, parameters: [ { $ref: '#/components/parameters/IdemKey' } ], responses: { '200': { description: Cancelled }, '409': { $ref: '#/components/responses/Error' } } }
@@ -138,10 +142,10 @@ paths:
   /usage:
     get:
       summary: Aggregates by day/project/model; format=csv for export (scoped)
-      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' }, { name: group_by, in: query, schema: { type: string, enum: [day, project, model] } }, { name: format, in: query, schema: { type: string, enum: [json, csv] } } ]
+      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' }, { $ref: '#/components/parameters/Tz' }, { name: group_by, in: query, schema: { type: string, enum: [day, project, model] } }, { name: format, in: query, schema: { type: string, enum: [json, csv] } } ]
       responses: { '200': { description: "Rows with key, requests, completed, failed, failure_rate, tokens_in, tokens_out, p50/p95 queue_ms and inference_ms, p95_total_ms, inference_ms_sum, est_cost_usd" } }
   /health:
-    get: { summary: Latest host/worker/Ollama/TLS telemetry with sampled_at and stale flag, responses: { '200': { description: OK } } }
+    get: { summary: "Latest host/worker/Ollama/TLS telemetry with sampled_at and stale flag; swap (total/used MB, used %, null when no swap) and services [{name, status}] from systemctl", responses: { '200': { description: OK } } }
   /admission:
     put:
       summary: Pause or resume admission (incident)
@@ -172,6 +176,7 @@ components:
     From: { name: from, in: query, schema: { type: string, format: date-time } }
     To: { name: to, in: query, schema: { type: string, format: date-time } }
     ProjectFilter: { name: project_id, in: query, schema: { type: string, format: uuid } }
+    Tz: { name: tz, in: query, description: IANA time zone for day boundaries (default UTC), schema: { type: string, example: Africa/Nairobi } }
   schemas:
     ProjectCreate:
       type: object

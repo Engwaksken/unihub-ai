@@ -18,6 +18,8 @@
     $tlsDays = $tls ? (int) floor(now()->diffInDays($tls, false)) : null;
     $history = is_array($health['history'] ?? null) ? $health['history'] : [];
     $workers = is_array($health['workers'] ?? null) ? $health['workers'] : [];
+    $services = is_array($c['services'] ?? null) ? $c['services'] : [];
+    $hasSwap = is_numeric($c['swap_total_mb'] ?? null) && $c['swap_total_mb'] > 0;
 @endphp
 <x-layouts.app title="Server & alerts">
     <div class="page-header">
@@ -58,6 +60,9 @@
                 @php([$v, $h] = $metric(Fmt::pct($c['ram_used_pct'] ?? null)))
                 <x-metric label="RAM used" :value="$v" :state="$state"
                           :hint="$h ?? (is_numeric($c['ram_used_mb'] ?? null) && is_numeric($c['ram_total_mb'] ?? null) ? Fmt::int($c['ram_used_mb']).' of '.Fmt::int($c['ram_total_mb']).' MB' : null)" />
+                @php([$v, $h] = $metric(! array_key_exists('swap_total_mb', $c) || $c['swap_total_mb'] === null ? Fmt::UNKNOWN : ($hasSwap ? Fmt::pct($c['swap_used_pct'] ?? null) : 'No swap')))
+                <x-metric label="Swap used" :value="$v" :state="$state"
+                          :hint="$h ?? ($hasSwap && is_numeric($c['swap_used_mb'] ?? null) ? Fmt::int($c['swap_used_mb']).' of '.Fmt::int($c['swap_total_mb']).' MB' : null)" />
                 @php([$v, $h] = $metric(Fmt::pct($c['disk_used_pct'] ?? null)))
                 <x-metric label="Disk used" :value="$v" :hint="$h" :state="$state" />
                 @php([$v, $h] = $metric(Fmt::int($c['queue_depth'] ?? null)))
@@ -112,6 +117,35 @@
             @endcan
         </section>
 
+        <section class="card" aria-labelledby="services-heading">
+            <h2 id="services-heading">Services</h2>
+            @if ($services === [])
+                <p class="muted">No service status reported. Set <code>GATEWAY_MONITORED_SERVICES</code> on the gateway to list systemd units.</p>
+            @else
+                <div class="table-wrap">
+                    <table class="table table-compact">
+                        <caption class="visually-hidden">systemd services on the gateway host</caption>
+                        <thead><tr><th scope="col">Service</th><th scope="col">Status</th></tr></thead>
+                        <tbody>
+                            @foreach ($services as $svc)
+                                @php($st = (string) ($svc['status'] ?? 'unknown'))
+                                <tr>
+                                    <th scope="row"><code>{{ $svc['name'] ?? '' }}</code></th>
+                                    <td>
+                                        @if ($state === 'stale')
+                                            <span class="badge badge-warning">Stale</span> <span class="muted small">last known {{ $st }}</span>
+                                        @else
+                                            <span @class(['badge', 'badge-success' => $st === 'active', 'badge-error' => in_array($st, ['inactive', 'failed'], true), 'badge-warning' => ! in_array($st, ['active', 'inactive', 'failed'], true)])>{{ $st === 'unknown' ? Fmt::UNKNOWN : ucfirst($st) }}</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </section>
+
         <section class="card" aria-labelledby="history-heading">
             <div class="section-head">
                 <h2 id="history-heading">History</h2>
@@ -129,7 +163,7 @@
             @if ($history === [])
                 <p class="muted">No samples in this window.</p>
             @else
-                <x-chart table-id="history-table" label="CPU, RAM and disk use (%) over time" :spec="[
+                <x-chart table-id="history-table" label="CPU, RAM, disk and swap use (%) over time" :spec="[
                     'type' => 'line',
                     'yLabel' => '%',
                     'labels' => array_map(fn ($s) => DisplayTime::format($s['sampled_at'] ?? null, 'j M H:i'), $history),
@@ -137,6 +171,7 @@
                         ['label' => 'CPU %', 'data' => array_map(fn ($s) => $s['cpu_pct'] ?? null, $history)],
                         ['label' => 'RAM %', 'data' => array_map(fn ($s) => $s['ram_used_pct'] ?? null, $history)],
                         ['label' => 'Disk %', 'data' => array_map(fn ($s) => $s['disk_used_pct'] ?? null, $history)],
+                        ['label' => 'Swap %', 'data' => array_map(fn ($s) => $s['swap_used_pct'] ?? null, $history)],
                     ],
                 ]" />
                 <details>
@@ -144,7 +179,7 @@
                     <div class="table-wrap">
                         <table class="table table-compact" id="history-table">
                             <caption class="visually-hidden">Telemetry samples</caption>
-                            <thead><tr><th scope="col">Sampled</th><th scope="col" class="num">CPU</th><th scope="col" class="num">RAM</th><th scope="col" class="num">Disk</th><th scope="col" class="num">Queue</th></tr></thead>
+                            <thead><tr><th scope="col">Sampled</th><th scope="col" class="num">CPU</th><th scope="col" class="num">RAM</th><th scope="col" class="num">Disk</th><th scope="col" class="num">Swap</th><th scope="col" class="num">Queue</th></tr></thead>
                             <tbody>
                                 @foreach (array_reverse($history) as $s)
                                     <tr>
@@ -152,6 +187,7 @@
                                         <td class="num">{{ Fmt::pct($s['cpu_pct'] ?? null) }}</td>
                                         <td class="num">{{ Fmt::pct($s['ram_used_pct'] ?? null) }}</td>
                                         <td class="num">{{ Fmt::pct($s['disk_used_pct'] ?? null) }}</td>
+                                        <td class="num">{{ Fmt::pct($s['swap_used_pct'] ?? null) }}</td>
                                         <td class="num">{{ Fmt::int($s['queue_depth'] ?? null) }}</td>
                                     </tr>
                                 @endforeach
