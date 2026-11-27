@@ -255,3 +255,43 @@ textarea.mono { font-family: var(--mono); font-size: .9rem; }
 
 .secret-row { display: flex; gap: .5rem; flex-wrap: wrap; }
 .secret-row .secret { flex: 1 1 320px; font-family: var(--mono); font-size: .95rem; background: var(--canvas); }
+
+/* ---------- Form tabs (<x-tabs>) ---------- */
+.tabset { display: grid; gap: 1rem; min-width: 0; }
+.tabset-list { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
+.tabset-tab { position: relative; padding: .6rem 1rem; border: 0; border-bottom: 3px solid transparent; background: none; font: inherit; font-size: .925rem; color: var(--ink-muted); cursor: pointer; white-space: nowrap; border-radius: 6px 6px 0 0; }
+.tabset-tab:hover { color: var(--burgundy); background: var(--burgundy-50); }
+.tabset-tab.is-active { color: var(--burgundy); border-bottom-color: var(--gold); font-weight: 600; }
+.tabset-error { display: inline-grid; place-items: center; width: 1.1rem; height: 1.1rem; margin-left: .35rem; border-radius: 999px; background: var(--error-ink); color: #fff; font-size: .7rem; font-weight: 700; vertical-align: text-top; }
+.tabset-panel { display: grid; gap: 1rem; min-width: 0; }
+.tabset-panel:focus { outline: none; }
+.tabset-panel:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+
+/* ---------- Layout and polish ---------- */
+.main { max-width: 1440px; padding: 1.75rem 2.25rem 3rem; }
+.page-header { padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.page-header h1 { color: var(--burgundy-700); }
+.card { padding: 1.25rem 1.5rem; }
+.table tbody tr { transition: background-color .12s ease; }
+.table tbody tr:hover { background: #fcf9fa; }
+.table-wrap { box-shadow: var(--shadow); }
+.filters { box-shadow: var(--shadow); }
+.metrics { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+.metric { box-shadow: var(--shadow); padding: 1rem 1.15rem; background: linear-gradient(180deg, #fff 0%, #fdfbfc 100%); }
+.metric-value { font-size: 1.6rem; }
+
+/* Dialogs: wider forms get room; long ones scroll inside the dialog, header stays put. */
+.dialog { padding: 1.5rem; }
+.dialog-lg { width: min(880px, calc(100vw - 2rem)); }
+.dialog .dialog-head { position: sticky; top: -1.5rem; z-index: 1; margin: -1.5rem -1.5rem 1rem; padding: 1.25rem 1.5rem .9rem; background: var(--surface); border-bottom: 1px solid var(--line); }
+.dialog .dialog-actions { position: sticky; bottom: -1.5rem; margin: 0 -1.5rem -1.5rem; padding: .9rem 1.5rem; background: var(--surface); border-top: 1px solid var(--line); }
+.dialog[open] { animation: dialog-in .14s ease-out; }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(.99); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dialog[open] { animation: none; } .table tbody tr { transition: none; } }
+
+@media (max-width: 900px) {
+    .main { padding: 1rem 1rem 3rem; }
+    .dialog { padding: 1.1rem; }
+    .dialog .dialog-head { top: -1.1rem; margin: -1.1rem -1.1rem 1rem; padding: 1rem 1.1rem .75rem; }
+    .dialog .dialog-actions { bottom: -1.1rem; margin: 0 -1.1rem -1.1rem; padding: .75rem 1.1rem; }
+}

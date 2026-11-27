@@ -16,24 +16,29 @@
                     @csrf
                     <input type="hidden" name="_modal" value="invite">
                     @if (old('_modal') === 'invite') <x-form-errors /> @endif
-                    <div class="form-grid">
-                        <div class="field">
-                            <label for="invite-name">Full name</label>
-                            <input id="invite-name" name="name" type="text" maxlength="120" required value="{{ old('_modal') === 'invite' ? old('name') : '' }}">
-                            @if (old('_modal') === 'invite') @error('name') <p class="field-error">{{ $message }}</p> @enderror @endif
-                        </div>
-                        <div class="field">
-                            <label for="invite-email">E-mail address</label>
-                            <input id="invite-email" name="email" type="email" maxlength="190" required value="{{ old('_modal') === 'invite' ? old('email') : '' }}">
-                            @if (old('_modal') === 'invite') @error('email') <p class="field-error">{{ $message }}</p> @enderror @endif
-                        </div>
-                    </div>
-                    @include('users._access', [
-                        'idPrefix' => 'invite-',
-                        'useOld' => old('_modal') === 'invite',
-                        'selectedRoles' => old('_modal') === 'invite' ? old('roles', []) : [],
-                        'currentMemberships' => [],
-                    ])
+                    <x-tabs name="invite" aria-label="Invitation" :tabs="['details' => 'Details', 'roles' => 'Roles', 'projects' => 'Projects']"
+                            :fields="old('_modal') === 'invite' ? ['details' => ['name', 'email'], 'roles' => ['roles', 'roles.*'], 'projects' => ['memberships', 'memberships.*']] : []">
+                        <x-tab-panel tabs="invite" key="details">
+                            <div class="form-grid">
+                                <div class="field">
+                                    <label for="invite-name">Full name</label>
+                                    <input id="invite-name" name="name" type="text" maxlength="120" required value="{{ old('_modal') === 'invite' ? old('name') : '' }}">
+                                    @if (old('_modal') === 'invite') @error('name') <p class="field-error">{{ $message }}</p> @enderror @endif
+                                </div>
+                                <div class="field">
+                                    <label for="invite-email">E-mail address</label>
+                                    <input id="invite-email" name="email" type="email" maxlength="190" required value="{{ old('_modal') === 'invite' ? old('email') : '' }}">
+                                    @if (old('_modal') === 'invite') @error('email') <p class="field-error">{{ $message }}</p> @enderror @endif
+                                </div>
+                            </div>
+                        </x-tab-panel>
+                        <x-tab-panel tabs="invite" key="roles">
+                            @include('users._access', ['section' => 'roles', 'idPrefix' => 'invite-', 'useOld' => old('_modal') === 'invite', 'selectedRoles' => old('_modal') === 'invite' ? old('roles', []) : [], 'currentMemberships' => []])
+                        </x-tab-panel>
+                        <x-tab-panel tabs="invite" key="projects">
+                            @include('users._access', ['section' => 'projects', 'idPrefix' => 'invite-', 'useOld' => old('_modal') === 'invite', 'selectedRoles' => [], 'currentMemberships' => []])
+                        </x-tab-panel>
+                    </x-tabs>
                     <div class="dialog-actions">
                         <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">Cancel</button>
                         <button type="submit" class="btn btn-primary">Send invitation</button>
@@ -160,17 +165,22 @@
                                             @method('PUT')
                                             <input type="hidden" name="_modal" value="{{ $modal }}">
                                             @if ($isOpen) <x-form-errors /> @endif
-                                            <div class="field">
-                                                <label for="{{ $modal }}-name">Full name</label>
-                                                <input id="{{ $modal }}-name" name="name" type="text" maxlength="120" required value="{{ $isOpen ? old('name', $user->name) : $user->name }}">
-                                                @if ($isOpen) @error('name') <p class="field-error">{{ $message }}</p> @enderror @endif
-                                            </div>
-                                            @include('users._access', [
-                                                'idPrefix' => $modal.'-',
-                                                'useOld' => $isOpen,
-                                                'selectedRoles' => $isOpen ? old('roles', $user->roleValues()) : $user->roleValues(),
-                                                'currentMemberships' => $user->memberships->mapWithKeys(fn ($m) => [strtolower($m->gateway_project_uuid) => $m->role->value])->all(),
-                                            ])
+                                            <x-tabs :name="$modal" aria-label="Staff access" :tabs="['details' => 'Details', 'roles' => 'Roles', 'projects' => 'Projects ('.$user->memberships->count().')']"
+                                                    :fields="$isOpen ? ['details' => ['name'], 'roles' => ['roles', 'roles.*'], 'projects' => ['memberships', 'memberships.*']] : []">
+                                                <x-tab-panel :tabs="$modal" key="details">
+                                                    <div class="field">
+                                                        <label for="{{ $modal }}-name">Full name</label>
+                                                        <input id="{{ $modal }}-name" name="name" type="text" maxlength="120" required value="{{ $isOpen ? old('name', $user->name) : $user->name }}">
+                                                        @if ($isOpen) @error('name') <p class="field-error">{{ $message }}</p> @enderror @endif
+                                                    </div>
+                                                </x-tab-panel>
+                                                <x-tab-panel :tabs="$modal" key="roles">
+                                                    @include('users._access', ['section' => 'roles', 'idPrefix' => $modal.'-', 'useOld' => $isOpen, 'selectedRoles' => $isOpen ? old('roles', $user->roleValues()) : $user->roleValues(), 'currentMemberships' => []])
+                                                </x-tab-panel>
+                                                <x-tab-panel :tabs="$modal" key="projects">
+                                                    @include('users._access', ['section' => 'projects', 'idPrefix' => $modal.'-', 'useOld' => $isOpen, 'selectedRoles' => [], 'currentMemberships' => $user->memberships->mapWithKeys(fn ($m) => [strtolower($m->gateway_project_uuid) => $m->role->value])->all()])
+                                                </x-tab-panel>
+                                            </x-tabs>
                                             <p class="field-help">Changes apply from the user’s next request; gateway permissions are re-signed on every call.</p>
                                             <div class="dialog-actions">
                                                 <button type="button" class="btn btn-secondary" onclick="this.closest('dialog').close()">Cancel</button>

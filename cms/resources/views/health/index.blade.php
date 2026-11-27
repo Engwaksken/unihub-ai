@@ -71,8 +71,14 @@
                           :value="$hbAge === null ? Fmt::UNKNOWN : ($hbAge > 60 ? 'Missing' : 'OK')"
                           :hint="$hb ? 'Last beat '.DisplayTime::format($hb, 'j M, H:i:s').' ('.$hbAge.' s ago)' : 'No heartbeat recorded'"
                           :state="$hbAge === null ? 'unknown' : null" />
-                <x-metric label="Ollama" :value="$state === 'unknown' ? Fmt::UNKNOWN : ucfirst((string) ($c['ollama_status'] ?? 'unknown'))"
-                          :hint="$c['loaded_model'] ?? null" :state="$state === 'stale' ? 'stale' : (($c['ollama_status'] ?? 'unknown') === 'unknown' ? 'unknown' : null)" />
+                @php($ollama = (string) ($c['ollama_status'] ?? 'unknown'))
+                <x-metric label="Ollama" :value="$state === 'unknown' ? Fmt::UNKNOWN : match ($ollama) { 'loaded' => 'Model loaded', 'idle' => 'Ready (idle)', 'unreachable' => 'Not responding', default => ucfirst($ollama) }"
+                          :hint="match ($ollama) {
+                              'loaded' => ($c['loaded_model'] ?? 'A model').' is in memory',
+                              'idle' => 'Running, no model in memory: it loads on the next request and unloads after 30 min unused',
+                              'unreachable' => 'Check: systemctl status ollama',
+                              default => null,
+                          }" :state="$state === 'stale' ? 'stale' : (($c['ollama_status'] ?? 'unknown') === 'unknown' ? 'unknown' : null)" />
                 <x-metric label="TLS certificate"
                           :value="$tlsDays === null ? Fmt::UNKNOWN : ($tlsDays < 0 ? 'Expired' : $tlsDays.' days left')"
                           :hint="$tls ? 'Expires '.DisplayTime::format($tls, 'j M Y') : null"

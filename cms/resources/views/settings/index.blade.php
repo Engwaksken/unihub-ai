@@ -55,9 +55,17 @@
                     @csrf
                     @method('PATCH')
                     <x-idempotency-key />
+                    @php
+                        $groupKeys = [];
+                        foreach (array_keys($fields) as $g) { $groupKeys[\Illuminate\Support\Str::slug($g)] = $g; }
+                    @endphp
+                    <x-tabs name="policy" aria-label="Gateway policy sections"
+                            :tabs="$groupKeys"
+                            :fields="collect($fields)->mapWithKeys(fn ($f, $g) => [\Illuminate\Support\Str::slug($g) => array_keys($f)])->all()">
                     @foreach ($fields as $group => $groupFields)
+                        <x-tab-panel tabs="policy" :key="\Illuminate\Support\Str::slug($group)">
                         <fieldset class="fieldset" @disabled(! $canEditPolicy)>
-                            <legend>{{ $group }}</legend>
+                            <legend class="visually-hidden">{{ $group }}</legend>
                             <div class="form-grid form-grid-3">
                                 @foreach ($groupFields as $key => $def)
                                     <div class="field">
@@ -73,7 +81,9 @@
                                 @endforeach
                             </div>
                         </fieldset>
+                        </x-tab-panel>
                     @endforeach
+                    </x-tabs>
                     @if ($canEditPolicy)
                         <div class="form-actions"><button type="submit" class="btn btn-primary" x-bind:disabled="busy">Save gateway settings</button></div>
                     @endif

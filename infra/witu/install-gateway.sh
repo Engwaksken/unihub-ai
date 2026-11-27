@@ -79,5 +79,26 @@ if ss -ltn | awk '{print $4}' | grep -Eq '^(0\.0\.0\.0|\*|\[::\]):8081$'; then
   die "port 8081 is listening publicly: check /etc/apache2/ports.conf"
 fi
 
+log "TLS certificate expiry on Server & alerts"
+CERT=/etc/letsencrypt/live/ai.witulibrary.org/cert.pem
+if [ -f "$CERT" ] && command -v setfacl >/dev/null; then
+  # The certificate is public; certbot only makes these two directories root-only (0700).
+  # Allow witu-gw to pass through them (x, no listing). Private keys stay 0600 root.
+  setfacl -m "u:$GW_USER:x" /etc/letsencrypt/live /etc/letsencrypt/archive
+  if sudo -u "$GW_USER" test -r "$CERT"; then
+    sed -i "s|^GATEWAY_TLS_CERT_PATH=.*|GATEWAY_TLS_CERT_PATH=$CERT|" "$GW_APP/.env"
+    sudo -u "$GW_USER" test -r /etc/letsencrypt/live/ai.witulibrary.org/privkey.pem && die "privkey.pem is readable by $GW_USER: check its permissions"
+    echo "gateway reads $CERT (expiry date only; the private key stays root-only)"
+    if [ -f "$GW_APP/vendor/autoload.php" ]; then
+      gw_artisan config:cache >/dev/null
+      systemctl restart witu-gateway-scheduler
+    fi
+  else
+    echo "WARNING: $GW_USER still cannot read $CERT; certificate expiry will show as Unknown"
+  fi
+else
+  echo "no $CERT (or setfacl missing): certificate expiry will show as Unknown"
+fi
+
 echo
 echo "Done. Next: sudo witu-deploy-gateway origin/main   (runbook phase B, step B3)"
