@@ -62,7 +62,8 @@ done
 for s in "${KOHA_SITES[@]}"; do say "  Koha-only site (will be disabled and removed): $s"; done
 for s in "${REVIEW_SITES[@]}"; do say "  MIXED site, mentions Koha but also serves other content: $s  -> left untouched, review by hand"; done
 [ ${#KOHA_SITES[@]} -eq 0 ] && [ ${#REVIEW_SITES[@]} -eq 0 ] && say "no Apache site mentions Koha"
-KOHA_CONFS=$(ls /etc/apache2/conf-enabled/ 2>/dev/null | grep -i koha || true)
+KOHA_CONFS=$(find /etc/apache2/conf-enabled -maxdepth 1 -iname '*koha*' -printf '%f
+' 2>/dev/null || true)
 [ -n "$KOHA_CONFS" ] && say "  Koha Apache confs: $KOHA_CONFS"
 
 section "Databases and accounts"
@@ -75,9 +76,9 @@ SYSUSERS=$(getent passwd | awk -F: '$1 ~ /-koha$/ {print $1}' || true)
 
 section "Files, apt source, cron"
 for d in "${KOHA_DIRS[@]}"; do [ -e "$d" ] && say "  $d ($(du -sh "$d" 2>/dev/null | cut -f1))"; done
-APT=$(ls /etc/apt/sources.list.d/ 2>/dev/null | grep -i koha | sed 's#^#/etc/apt/sources.list.d/#' || true)
-KEYS=$(ls /usr/share/keyrings/ /etc/apt/trusted.gpg.d/ 2>/dev/null | grep -i koha || true)
-CRON=$(ls /etc/cron.d/ /etc/cron.daily/ /etc/cron.hourly/ /etc/cron.weekly/ /etc/cron.monthly/ /etc/logrotate.d/ 2>/dev/null | grep -i koha || true)
+APT=$(find /etc/apt/sources.list.d -maxdepth 1 -iname '*koha*' 2>/dev/null || true)
+KEYS=$(find /usr/share/keyrings /etc/apt/trusted.gpg.d -maxdepth 1 -iname '*koha*' 2>/dev/null || true)
+CRON=$(find /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly /etc/logrotate.d -maxdepth 1 -iname '*koha*' 2>/dev/null || true)
 [ -n "$APT" ] && say "  apt source: $APT"
 [ -n "$KEYS" ] && say "  apt keyring: $KEYS"
 [ -n "$CRON" ] && say "  cron/logrotate: $CRON"
@@ -122,8 +123,8 @@ if [ ${#PKGS[@]} -gt 0 ]; then DEBIAN_FRONTEND=noninteractive apt-get purge -y -
 for u in $SYSUSERS; do userdel "$u" 2>/dev/null || true; getent group "$u" >/dev/null && groupdel "$u" 2>/dev/null || true; done
 for d in "${KOHA_DIRS[@]}"; do rm -rf "$d"; done
 for f in $APT; do rm -f "$f"; done
-for k in $KEYS; do rm -f "/usr/share/keyrings/$k" "/etc/apt/trusted.gpg.d/$k"; done
-for c in $CRON; do rm -f /etc/cron.d/"$c" /etc/cron.daily/"$c" /etc/cron.hourly/"$c" /etc/cron.weekly/"$c" /etc/cron.monthly/"$c" /etc/logrotate.d/"$c"; done
+for k in $KEYS; do rm -f "$k"; done
+for c in $CRON; do rm -f "$c"; done
 apt-get update -q >/dev/null 2>&1 || true
 
 section "Done"
