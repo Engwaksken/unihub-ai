@@ -95,6 +95,21 @@ class OpenAiCompatTest extends TestCase
         $this->assertSame(1, UsageEvent::count()); // shows up in CMS usage reports
     }
 
+    public function test_json_response_format_asks_ollama_for_json(): void
+    {
+        Http::fake(['*/api/chat' => Http::response(['message' => ['content' => '{"suggested_rate": 1200}'], 'prompt_eval_count' => 30, 'eval_count' => 9])]);
+        $key = $this->chatProject();
+
+        $this->chat($key, ['messages' => [['role' => 'user', 'content' => 'Rate for cement?']], 'response_format' => ['type' => 'json_object']])
+            ->assertOk()->assertJsonPath('choices.0.message.content', '{"suggested_rate": 1200}');
+        Http::assertSent(fn (HttpRequest $req) => ($req->data()['format'] ?? null) === 'json');
+
+        // Plain text stays plain; an unknown type is refused.
+        $this->chat($key, ['messages' => [['role' => 'user', 'content' => 'hi']], 'response_format' => ['type' => 'text']])->assertOk();
+        Http::assertSent(fn (HttpRequest $req) => ! isset($req->data()['format']) && $req->data()['messages'][1]['content'] === 'hi');
+        $this->chat($key, ['messages' => [['role' => 'user', 'content' => 'hi']], 'response_format' => ['type' => 'xml']])->assertStatus(422);
+    }
+
     public function test_reaching_max_tokens_reports_length(): void
     {
         Http::fake(['*/api/chat' => Http::response(['message' => ['content' => 'cut'], 'prompt_eval_count' => 5, 'eval_count' => 20])]);

@@ -59,6 +59,8 @@ class OpenAiController extends Controller
             'temperature' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:2'],
             'n' => ['sometimes', 'nullable', 'integer', 'in:1'],
             'stream' => ['sometimes', 'nullable', 'boolean'],
+            'response_format' => ['sometimes', 'nullable', 'array'],
+            'response_format.type' => ['required_with:response_format', 'string', 'in:text,json_object,json_schema'],
         ]);
         if ($v->fails()) {
             throw ApiException::validation('Invalid request', $v->errors()->toArray());
@@ -68,9 +70,14 @@ class OpenAiController extends Controller
         }
 
         $messages = $this->messages($data['messages']);
+        // JSON mode (json_object, or json_schema without enforcing the schema) makes Ollama
+        // emit one JSON value and stop: valid output for apps that parse it, and far fewer
+        // tokens than a small model's prose or code fences.
+        $json = in_array($data['response_format']['type'] ?? null, ['json_object', 'json_schema'], true);
         $input = json_encode(array_filter([
             'messages' => $messages,
             'temperature' => isset($data['temperature']) ? (float) $data['temperature'] : null,
+            'format' => $json ? 'json' : null,
         ], fn ($v) => $v !== null), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         if (mb_strlen($input) > 32000) {
             throw ApiException::validation('Conversation too long', ['messages' => ['at most 32000 characters in total']]);

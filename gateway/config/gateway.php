@@ -23,7 +23,9 @@ return [
         // Must be loopback (enforced in OllamaClient). Never user-supplied (SSRF control).
         'url' => env('OLLAMA_URL', 'http://127.0.0.1:11434'),
         'connect_timeout' => 5,
-        'num_ctx' => 2048,
+        // Context window (prompt + answer, in tokens). Admission refuses requests that do not
+        // fit. Larger fits longer prompts (e.g. BOQ supplier scans) at the cost of RAM.
+        'num_ctx' => (int) env('OLLAMA_NUM_CTX', 4096),
         'num_thread' => (int) env('OLLAMA_NUM_THREAD', 2),
         'keep_alive' => env('OLLAMA_KEEP_ALIVE', '30m'),
     ],

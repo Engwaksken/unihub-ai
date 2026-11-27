@@ -120,7 +120,7 @@ class PublicApiTest extends TestCase
     public function test_token_budget_rejects_without_truncating(): void
     {
         [, $key] = $this->projectWithKey();
-        // ~15 000 bytes ≈ 5 000 estimated tokens > 2 048 context
+        // ~15 000 bytes ≈ 5 000 estimated tokens > 4 096 context
         $this->submit($key, ['input' => str_repeat('word ', 3000)])
             ->assertStatus(422)->assertJsonPath('error.code', 'TOKEN_BUDGET');
         $this->assertSame(0, Job::count());

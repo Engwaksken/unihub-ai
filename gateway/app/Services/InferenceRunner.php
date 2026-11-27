@@ -31,14 +31,14 @@ class InferenceRunner
             $input = $this->cipher->decrypt($job->id, 'input', $payload->input_ct, $payload->key_id);
 
             if ($job->input_kind === Job::INPUT_CHAT) {
-                // {"messages": [...], "temperature": ?float}: validated at admission.
+                // {"messages": [...], "temperature"?: float, "format"?: "json"}: validated at admission.
                 $chat = json_decode($input, true, 8, JSON_THROW_ON_ERROR);
                 $result = $this->ollama->chatMessages(
                     $job->model->tag,
                     $version->system_template,
                     $chat['messages'],
                     $job->max_tokens,
-                    'text',
+                    ($chat['format'] ?? null) === 'json' ? 'json' : 'text',
                     $this->settings->int('inference_deadline_seconds'),
                     isset($chat['temperature']) ? (float) $chat['temperature'] : null,
                 );
