@@ -46,8 +46,13 @@ fi
 log "PHP-FPM pools witu-gateway (management) and witu-gateway-public (apps, phase C)"
 install -m 644 "$HERE/php/witu-gateway.pool.conf" /etc/php/8.4/fpm/pool.d/witu-gateway.conf
 install -m 644 "$HERE/php/witu-gateway-public.pool.conf" /etc/php/8.4/fpm/pool.d/witu-gateway-public.conf
+# One disable_functions list for all pools (they share the OPcache; per-pool lists make cached
+# code call the wrong function). Remove any per-pool copy left by older installs.
+install -m 644 "$HERE/php/99-witu.ini" /etc/php/8.4/fpm/conf.d/99-witu.ini
+sed -i '/^php_admin_value\[disable_functions\]/d' /etc/php/8.4/fpm/pool.d/witu-*.conf
 php-fpm8.4 -t
-systemctl reload php8.4-fpm
+# restart, not reload: a fresh OPcache, so no code compiled under the old lists survives.
+systemctl restart php8.4-fpm
 for sock in witu-gateway witu-gateway-public; do
   for _ in $(seq 1 20); do [ -S "/run/php/$sock.sock" ] && break; sleep 0.5; done
   ls -l "/run/php/$sock.sock" || { journalctl -u php8.4-fpm -n 20 --no-pager; exit 1; }
