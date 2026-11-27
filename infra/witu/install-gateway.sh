@@ -43,12 +43,15 @@ else
   echo "created $GW_APP/.env with a new APP_KEY"
 fi
 
-log "PHP-FPM pool witu-gateway"
+log "PHP-FPM pools witu-gateway (management) and witu-gateway-public (apps, phase C)"
 install -m 644 "$HERE/php/witu-gateway.pool.conf" /etc/php/8.4/fpm/pool.d/witu-gateway.conf
+install -m 644 "$HERE/php/witu-gateway-public.pool.conf" /etc/php/8.4/fpm/pool.d/witu-gateway-public.conf
 php-fpm8.4 -t
 systemctl reload php8.4-fpm
-for _ in $(seq 1 20); do [ -S /run/php/witu-gateway.sock ] && break; sleep 0.5; done
-ls -l /run/php/witu-gateway.sock || { journalctl -u php8.4-fpm -n 20 --no-pager; exit 1; }
+for sock in witu-gateway witu-gateway-public; do
+  for _ in $(seq 1 20); do [ -S "/run/php/$sock.sock" ] && break; sleep 0.5; done
+  ls -l "/run/php/$sock.sock" || { journalctl -u php8.4-fpm -n 20 --no-pager; exit 1; }
+done
 
 log "systemd units (enabled now, started by the first deploy)"
 for u in $GW_UNITS; do install -m 644 "$HERE/systemd/$u.service" "/etc/systemd/system/$u.service"; done
@@ -69,15 +72,18 @@ restore_apache() {
 trap restore_apache ERR
 a2enmod -q proxy proxy_fcgi setenvif rewrite
 install -m 644 "$HERE/apache/witu-gateway-internal.conf" /etc/apache2/sites-available/witu-gateway-internal.conf
-a2ensite -q witu-gateway-internal
+install -m 644 "$HERE/apache/witu-gateway-public.conf" /etc/apache2/sites-available/witu-gateway-public.conf
+a2ensite -q witu-gateway-internal witu-gateway-public
 apache2ctl configtest
 systemctl reload apache2
 trap - ERR
 sleep 1
-ss -ltn | grep -q '127.0.0.1:8081 ' && echo "listening on 127.0.0.1:8081 (loopback only)"
-if ss -ltn | awk '{print $4}' | grep -Eq '^(0\.0\.0\.0|\*|\[::\]):8081$'; then
-  die "port 8081 is listening publicly: check /etc/apache2/ports.conf"
-fi
+for port in 8081 8082; do
+  ss -ltn | grep -q "127.0.0.1:$port " && echo "listening on 127.0.0.1:$port (loopback only)"
+  if ss -ltn | awk '{print $4}' | grep -Eq "^(0\.0\.0\.0|\*|\[::\]):$port\$"; then
+    die "port $port is listening publicly: check /etc/apache2/ports.conf"
+  fi
+done
 
 log "TLS certificate expiry on Server & alerts"
 CERT=/etc/letsencrypt/live/ai.witulibrary.org/cert.pem

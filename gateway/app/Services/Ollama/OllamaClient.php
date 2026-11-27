@@ -39,12 +39,21 @@ class OllamaClient
     /** @return array{content: string, tokens_in: ?int, tokens_out: ?int} */
     public function chat(string $model, string $system, string $input, int $numPredict, string $format, int $deadlineSeconds): array
     {
+        return $this->chatMessages($model, $system, [['role' => 'user', 'content' => $input]], $numPredict, $format, $deadlineSeconds);
+    }
+
+    /**
+     * The task's system template always comes first; the caller's messages follow
+     * (OpenAI-compatible chat, phase C).
+     *
+     * @param  list<array{role: string, content: string}>  $messages
+     * @return array{content: string, tokens_in: ?int, tokens_out: ?int}
+     */
+    public function chatMessages(string $model, string $system, array $messages, int $numPredict, string $format, int $deadlineSeconds, ?float $temperature = null): array
+    {
         $body = [
             'model' => $model,
-            'messages' => [
-                ['role' => 'system', 'content' => $system],
-                ['role' => 'user', 'content' => $input],
-            ],
+            'messages' => [['role' => 'system', 'content' => $system], ...$messages],
             'stream' => false,
             'keep_alive' => config('gateway.ollama.keep_alive'),
             'options' => [
@@ -55,6 +64,9 @@ class OllamaClient
         ];
         if ($format === 'json') {
             $body['format'] = 'json';
+        }
+        if ($temperature !== null) {
+            $body['options']['temperature'] = $temperature;
         }
 
         try {

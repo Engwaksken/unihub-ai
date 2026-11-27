@@ -39,6 +39,7 @@ class SettingsController extends Controller
             'max_output_tokens' => ['label' => 'Max output tokens', 'type' => 'integer', 'min' => 1, 'max' => 1024],
             'queue_wait_max_seconds' => ['label' => 'Max queue wait (s)', 'type' => 'integer', 'min' => 10, 'max' => 3600],
             'inference_deadline_seconds' => ['label' => 'Inference deadline (s)', 'type' => 'integer', 'min' => 10, 'max' => 600],
+            'sync_wait_seconds' => ['label' => 'Chat API wait (s)', 'type' => 'integer', 'min' => 10, 'max' => 170, 'help' => 'How long /gw/v1/chat/completions waits for an answer before replying 504. Keep it below the timeout of the calling apps (Elevate Her: 90 s).'],
         ],
         'Retention & keys' => [
             'result_ttl_hours' => ['label' => 'Result retention (hours)', 'type' => 'integer', 'min' => 1, 'max' => 24],

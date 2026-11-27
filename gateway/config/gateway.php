@@ -62,6 +62,9 @@ return [
         'max_output_tokens' => 256,
         'queue_wait_max_seconds' => 120,
         'inference_deadline_seconds' => 120,
+        // OpenAI-compatible /v1/chat/completions waits this long for its answer (queue + inference)
+        // before answering 504. Keep it below the callers' HTTP timeout (Elevate Her: 90 s).
+        'sync_wait_seconds' => 85,
         'result_ttl_hours' => 24,
         'metadata_retention_days' => 90,
         'key_rotation_overlap_days' => 7,

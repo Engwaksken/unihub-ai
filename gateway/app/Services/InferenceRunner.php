@@ -30,17 +30,32 @@ class InferenceRunner
             }
             $input = $this->cipher->decrypt($job->id, 'input', $payload->input_ct, $payload->key_id);
 
-            $result = $this->ollama->chat(
-                $job->model->tag,
-                $version->system_template,
-                $input,
-                $job->max_tokens,
-                $version->output_format,
-                $this->settings->int('inference_deadline_seconds'),
-            );
+            if ($job->input_kind === Job::INPUT_CHAT) {
+                // {"messages": [...], "temperature": ?float}: validated at admission.
+                $chat = json_decode($input, true, 8, JSON_THROW_ON_ERROR);
+                $result = $this->ollama->chatMessages(
+                    $job->model->tag,
+                    $version->system_template,
+                    $chat['messages'],
+                    $job->max_tokens,
+                    'text',
+                    $this->settings->int('inference_deadline_seconds'),
+                    isset($chat['temperature']) ? (float) $chat['temperature'] : null,
+                );
+                unset($chat);
+            } else {
+                $result = $this->ollama->chat(
+                    $job->model->tag,
+                    $version->system_template,
+                    $input,
+                    $job->max_tokens,
+                    $version->output_format,
+                    $this->settings->int('inference_deadline_seconds'),
+                );
+            }
             unset($input);
 
-            if ($version->output_format === 'json') {
+            if ($version->output_format === 'json' && $job->input_kind !== Job::INPUT_CHAT) {
                 json_decode($result['content']);
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     throw new InferenceException('OUTPUT_INVALID', 'Model output was not valid JSON', false);

@@ -91,9 +91,9 @@ abstract class TestCase extends BaseTestCase
     }
 
     /** @return array{0: Project, 1: string} project + plaintext key */
-    protected function projectWithKey(array $attrs = []): array
+    protected function projectWithKey(array $attrs = [], array $tasks = ['daily_plan']): array
     {
-        $project = $this->project($attrs);
+        $project = $this->project($attrs, $tasks);
         [, $secret] = app(KeyService::class)->issue($project, 'test');
 
         return [$project, $secret];
