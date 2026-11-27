@@ -238,16 +238,34 @@ Phase A is complete when every row passes. Phase B (gateway v2 + CMS connection)
 
 ## Routine deploys (after phase A)
 
-1. Merge a PR to `main` and wait for CI to pass. Download that commit's `cms-bundle` artifact and upload it to `/home/witu-deploy/incoming/` (step 7).
+### One-time: let the server download CI bundles itself
+
+GitHub only serves CI artifacts to an authenticated caller, even for a public repository. Create a token that can do nothing else:
+
+1. GitHub → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+2. Name `witu-vps-deploy`, expiry 1 year (put a reminder in the calendar), **Repository access: Only select repositories → `unihub-ai`**.
+3. **Permissions → Repository → Actions: Read-only.** Leave everything else at "No access". Generate, and copy the token.
+4. On the server, store it root-only. `read -s` keeps it off the screen and out of the shell history:
+   ```bash
+   sudo install -d -m 700 /etc/witu-ai
+   read -rsp "GitHub token: " T && printf '%s\n' "$T" | sudo tee /etc/witu-ai/github-token >/dev/null && unset T; echo
+   sudo chmod 600 /etc/witu-ai/github-token && sudo chown root:root /etc/witu-ai/github-token
+   ```
+
+Without the token the deploy still works with `--assets <zip>` (SFTP upload, step 7).
+
+### Each release
+
+1. Merge a PR to `main` and wait for CI to pass on GitHub.
 2. Refresh the ops scripts. This step only matters when the PR changed `infra/witu/`; review that diff first:
    ```bash
    sudo -u witu-deploy git -C /var/www/witu-ai-source fetch origin
    sudo -u witu-deploy git -C /var/www/witu-ai-source checkout --detach origin/main
    sudo bash /var/www/witu-ai-source/infra/witu/install-ops.sh
    ```
-3. Deploy. The first run prints any pending migration SQL and stops; re-run it with `--migrate` once you have reviewed the SQL:
+3. Deploy. The script pulls `main`, downloads the CI bundle built for exactly that commit (refusing if that CI run did not succeed), and deploys. The first run prints any pending migration SQL and stops; re-run it with `--migrate` once you have reviewed the SQL:
    ```bash
-   sudo witu-deploy-cms origin/main --assets /home/witu-deploy/incoming/unihub-cms-<sha>.zip
+   sudo witu-deploy-cms origin/main
    ```
    - If the health check fails, the script puts the previous code back automatically.
    - Manual rollback: `sudo witu-rollback-cms` lists the backups. Then run `sudo witu-rollback-cms /var/backups/witu-ai/cms-<ts>`, and add `--with-db` only if the bad release changed data.
