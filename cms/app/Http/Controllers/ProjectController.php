@@ -4,11 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Gateway\Data\Organization;
 use App\Gateway\Data\Project;
+use App\Gateway\Exceptions\GatewayForbiddenException;
+use App\Gateway\Exceptions\GatewayNotFoundException;
 use App\Gateway\GatewayClient;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -174,6 +178,69 @@ class ProjectController extends Controller
         $updated = $this->mutate(fn () => $this->gateway($request)->updateProject($project, ['status' => $data['status']], $this->idempotencyKey($request)));
 
         return redirect()->route('projects.settings', $project)->with('status', "Project status changed to {$updated->status}.");
+    }
+
+    /**
+     * Edit or archive the selected projects. "Delete" archives: the gateway has
+     * no project delete, and jobs, keys and usage must keep their project.
+     * Edit sends only the fields that were filled in; each field is checked
+     * against the user's permission on each project, and a project they may not
+     * change is skipped with the reason.
+     */
+    public function bulk(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', Rule::in(['edit', 'delete'])],
+            'status' => ['nullable', Rule::in(Project::STATUSES)],
+            'environment' => ['nullable', Rule::in(Project::ENVIRONMENTS)],
+            'daily_limit' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'rpm_limit' => ['nullable', 'integer', 'min:0', 'max:10000'],
+            'queue_limit' => ['nullable', 'integer', 'min:0', 'max:8'],
+        ]);
+        $ids = $this->selectedIds($request);
+
+        if ($data['action'] === 'delete') {
+            $changes = ['status' => 'archived'];
+        } else {
+            $changes = array_filter(
+                array_intersect_key($data, array_flip(['status', 'environment', 'daily_limit', 'rpm_limit', 'queue_limit'])),
+                fn ($v) => $v !== null && $v !== '',
+            );
+            foreach (['daily_limit', 'rpm_limit', 'queue_limit'] as $field) {
+                if (isset($changes[$field])) {
+                    $changes[$field] = (int) $changes[$field];
+                }
+            }
+            if ($changes === []) {
+                throw ValidationException::withMessages(['form' => ['Fill in at least one field to change. Empty fields are left as they are.']]);
+            }
+        }
+
+        // Field => capability (see fieldPermissions()).
+        $needs = ['status' => 'project.change_status', 'environment' => 'project.edit_metadata',
+            'daily_limit' => 'project.change_quotas', 'rpm_limit' => 'project.change_quotas', 'queue_limit' => 'project.change_quotas'];
+        $client = $this->gateway($request);
+        $names = array_map(fn (Project $p) => $p->name, $this->projectOptions($request, 'project.view'));
+
+        [$done, $skipped] = $this->eachRow($ids, fn (string $id) => '“'.($names[$id] ?? substr($id, 0, 8).'…').'”', function (string $id) use ($changes, $needs, $client, $request) {
+            if (! Gate::allows('project.view', $id)) {
+                throw new GatewayNotFoundException('not visible');
+            }
+            foreach (array_keys($changes) as $field) {
+                if (! Gate::allows($needs[$field], $id)) {
+                    throw new GatewayForbiddenException('You may not change '.str_replace('_', ' ', $field).' on this project.');
+                }
+            }
+            $client->updateProject($id, $changes, $this->rowIdempotencyKey($request, $id));
+        });
+
+        // The status cards on the list are cached briefly per user.
+        Cache::forget('project-stats:'.$request->user()->getKey());
+        $noun = Str::plural('project', $done);
+
+        return $this->bulkResult($data['action'] === 'delete'
+            ? "Archived {$done} {$noun}. Archived projects refuse requests; set the status back to active to restore one."
+            : "Updated {$done} {$noun} (".implode(', ', array_map(fn ($f) => str_replace('_', ' ', $f), array_keys($changes))).').', $skipped);
     }
 
     /**

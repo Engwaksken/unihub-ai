@@ -76,6 +76,7 @@ Route::middleware('auth')->group(function () {
             ->middleware('can:project.create')->name('projects.create');
         Route::post('/projects', [ProjectController::class, 'store'])
             ->middleware('can:project.create')->name('projects.store');
+        Route::post('/projects/bulk', [ProjectController::class, 'bulk'])->name('projects.bulk');
         Route::get('/projects/{project}', [ProjectController::class, 'show'])
             ->whereUuid('project')->name('projects.show');
         Route::get('/projects/{project}/settings', [ProjectController::class, 'settings'])
@@ -119,6 +120,7 @@ Route::middleware('auth')->group(function () {
         // Jobs & queue
         Route::middleware('feature:jobs')->group(function () {
             Route::get('/jobs', [JobController::class, 'index'])->middleware('can:job.view')->name('jobs.index');
+            Route::post('/jobs/bulk', [JobController::class, 'bulk'])->middleware('can:job.view')->name('jobs.bulk');
             Route::post('/jobs/{job}/cancel', [JobController::class, 'cancel'])
                 ->whereUuid('job')->middleware('can:job.manage')->name('jobs.cancel');
             Route::post('/jobs/{job}/retry', [JobController::class, 'retry'])
@@ -158,6 +160,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/users', [UserController::class, 'index'])->name('users.index');
             Route::get('/users/invite', [UserController::class, 'create'])->name('users.create');
             Route::post('/users', [UserController::class, 'store'])->name('users.store');
+            Route::post('/users/bulk', [UserController::class, 'bulk'])->name('users.bulk');
             Route::get('/users/{user}/edit', [UserController::class, 'edit'])->whereUuid('user')->name('users.edit');
             Route::put('/users/{user}', [UserController::class, 'update'])->whereUuid('user')->name('users.update');
             Route::post('/users/{user}/disable', [UserController::class, 'disable'])->whereUuid('user')->name('users.disable');

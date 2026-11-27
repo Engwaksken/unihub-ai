@@ -116,12 +116,12 @@ class SettingsController extends Controller
         }
 
         if ($changes === []) {
-            return redirect()->route('settings.index')->with('status', 'No gateway settings changed.');
+            return redirect()->route('settings.index', ['tab' => 'policy'])->with('status', 'No gateway settings changed.');
         }
 
         $this->mutate(fn () => $client->mutateData('PATCH', '/settings', $changes, $this->idempotencyKey($request)));
 
-        return redirect()->route('settings.index')->with('status', 'Gateway settings saved ('.implode(', ', array_keys($changes)).').');
+        return redirect()->route('settings.index', ['tab' => 'policy'])->with('status', 'Gateway settings saved ('.implode(', ', array_keys($changes)).').');
     }
 
     public function updateCms(Request $request, CmsSettings $cms): RedirectResponse
@@ -150,7 +150,7 @@ class SettingsController extends Controller
             'notification_recipients' => array_map('strtolower', $recipients),
         ], $request->user());
 
-        return redirect()->route('settings.index')->with('status', 'Portal settings saved.');
+        return redirect()->route('settings.index', ['tab' => 'portal'])->with('status', 'Portal settings saved.');
     }
 
     /**
@@ -206,7 +206,7 @@ class SettingsController extends Controller
 
         $cms->update($changes, $request->user());
 
-        return redirect()->route('settings.index')->with('status', 'Appearance saved.');
+        return redirect()->route('settings.index', ['tab' => 'appearance'])->with('status', 'Appearance saved.');
     }
 
     /**

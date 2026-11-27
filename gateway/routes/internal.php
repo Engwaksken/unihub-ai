@@ -38,6 +38,7 @@ Route::post('/tasks', [TaskController::class, 'store']);
 Route::post('/tasks/{key}/versions/{version}/publish', [TaskController::class, 'publish'])->whereNumber('version');
 
 Route::get('/jobs', [JobAdminController::class, 'index']);
+Route::post('/jobs/delete', [JobAdminController::class, 'destroyMany']);
 Route::get('/jobs/{id}', [JobAdminController::class, 'show']);
 Route::post('/jobs/{id}/cancel', [JobAdminController::class, 'cancel']);
 Route::post('/jobs/{id}/retry', [JobAdminController::class, 'retry']);

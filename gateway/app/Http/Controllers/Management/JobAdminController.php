@@ -110,6 +110,46 @@ class JobAdminController extends ManagementController
         return $this->data($new->fresh(['taskVersion.task', 'model'])->toMetadata(), 201);
     }
 
+    /**
+     * Delete finished jobs (completed, failed, cancelled, expired) and their payloads.
+     * Queued and running jobs are skipped, as are unknown and out-of-scope ids (both
+     * reported as not_found). Usage events have no foreign key to jobs and are kept,
+     * so reports do not change. One audit event per deleted job.
+     */
+    public function destroyMany(Request $request): JsonResponse
+    {
+        $actor = $this->actor($request);
+        $actor->authorize('job.delete');
+        $data = $this->validate($request->json()->all(), [
+            'ids' => 'required|array|min:1|max:100',
+            'ids.*' => 'required|uuid|distinct',
+        ]);
+        $ids = array_map('strtolower', $data['ids']);
+
+        $jobs = Job::whereIn('id', $ids)->get()->keyBy('id');
+        $deleted = [];
+        $skipped = [];
+        foreach ($ids as $id) {
+            $job = $jobs->get($id);
+            if ($job === null || ! $actor->can('job.delete', $job->project_id)) {
+                $skipped[] = ['id' => $id, 'reason' => 'not_found'];
+
+                continue;
+            }
+            // Re-checked in the delete itself so a job picked up meanwhile is not removed.
+            $removed = Job::where('id', $id)->whereIn('state', Job::TERMINAL)->delete();
+            if ($removed === 0) {
+                $skipped[] = ['id' => $id, 'reason' => 'not_finished'];
+
+                continue;
+            }
+            $deleted[] = $id;
+            $this->audit($request, 'job.deleted', 'job', $id, $job->project_id, ['state' => $job->state]);
+        }
+
+        return $this->data(['deleted' => $deleted, 'skipped' => $skipped]);
+    }
+
     private function find(Request $request, string $id, string $capability): Job
     {
         $job = Job::find($this->uuid($id)) ?? throw ApiException::notFound();

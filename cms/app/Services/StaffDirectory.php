@@ -242,6 +242,67 @@ class StaffDirectory
         Audit::record('staff.disabled', actor: $actor, subjectUser: $user, metadata: ['sessions_revoked' => $revoked]);
     }
 
+    /**
+     * Delete an account for good. Only accounts that never finished setup
+     * (invited) or are already disabled can go, so an active colleague is
+     * always disabled first. Roles, memberships and invitations cascade; the
+     * audit trail has no foreign key to users and keeps every event.
+     */
+    public function delete(User $user, User $actor): void
+    {
+        if ($user->is($actor)) {
+            throw new InvalidArgumentException('You cannot delete your own account.');
+        }
+        if ($user->isSystem()) {
+            throw new InvalidArgumentException('The system account cannot be deleted: the CMS uses it for scheduled gateway checks and alert e-mails.');
+        }
+        if (! $user->isDisabled() && $user->hasSetPassword()) {
+            throw new InvalidArgumentException('Disable the account first; only invited or disabled accounts can be deleted.');
+        }
+        if ($user->hasRole(Role::Owner) && $this->ownerCount() <= 1) {
+            throw new InvalidArgumentException('The last owner cannot be deleted.');
+        }
+
+        $snapshot = ['email' => $user->email, 'name' => $user->name, 'roles' => $user->roleValues(), 'projects' => $user->memberships->count()];
+        DB::transaction(function () use ($user) {
+            $this->deleteSessions($user);
+            $user->delete();
+        });
+
+        Audit::record('staff.deleted', actor: $actor, subjectUser: $user, metadata: $snapshot);
+    }
+
+    /**
+     * Add one role to (or remove it from) an account, keeping everything else.
+     * Removing a project-scoped role also drops the memberships held with it.
+     */
+    public function changeRole(User $user, Role $role, bool $add, User $actor): void
+    {
+        if ($user->isSystem()) {
+            throw new InvalidArgumentException('The system account has fixed access (see cms:system-user).');
+        }
+        $roles = $user->roles();
+        $memberships = $user->memberships->mapWithKeys(fn ($m) => [strtolower($m->gateway_project_uuid) => $m->role])->all();
+
+        if ($add) {
+            if (in_array($role, $roles, true)) {
+                throw new InvalidArgumentException("Already has the {$role->label()} role.");
+            }
+            $roles[] = $role;
+        } else {
+            if (! in_array($role, $roles, true)) {
+                throw new InvalidArgumentException("Does not have the {$role->label()} role.");
+            }
+            $roles = array_values(array_filter($roles, fn (Role $r) => $r !== $role));
+            if ($roles === []) {
+                throw new InvalidArgumentException('It is their only role; every account needs at least one.');
+            }
+            $memberships = array_filter($memberships, fn (Role $r) => $r !== $role);
+        }
+
+        $this->updateAccess($user, $roles, $memberships, $actor);
+    }
+
     public function enable(User $user, User $actor): void
     {
         $user->forceFill(['disabled_at' => null])->save();

@@ -13,6 +13,17 @@
         {{ $messages[$status] ?? $status }}
     </div>
 @endif
+@if (session('bulk_skipped'))
+    {{-- Rows a bulk action left alone, each with the reason. --}}
+    <div class="alert alert-warning" role="alert">
+        <p class="alert-title">{{ count(session('bulk_skipped')) }} {{ count(session('bulk_skipped')) === 1 ? 'item was' : 'items were' }} skipped:</p>
+        <ul>
+            @foreach (session('bulk_skipped') as $line)
+                <li>{{ $line }}</li>
+            @endforeach
+        </ul>
+    </div>
+@endif
 @if ($errors->has('form'))
     <div class="alert alert-error" role="alert">
         @foreach ($errors->get('form') as $message)

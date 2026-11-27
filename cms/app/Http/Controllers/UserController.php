@@ -194,6 +194,78 @@ class UserController extends Controller
         return back()->with('status', "{$user->email} has been re-enabled.");
     }
 
+    /**
+     * Act on the selected accounts. Every rule of the single-account actions
+     * still applies per account (not yourself, not the system account, not the
+     * last owner, delete only invited or disabled accounts); an account that
+     * breaks one is skipped with the reason.
+     */
+    public function bulk(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', Rule::in(['delete', 'disable', 'enable', 'role'])],
+            'role' => ['nullable', Rule::in(Role::values())],
+            'role_change' => ['nullable', Rule::in(['add', 'remove'])],
+        ]);
+        $ids = $this->selectedIds($request);
+        $actor = $request->user();
+
+        // Each action: what to do to one account, and the summary line ({n} accounts).
+        if ($data['action'] === 'role') {
+            $role = Role::tryFrom((string) ($data['role'] ?? ''));
+            if ($role === null || ! isset($data['role_change'])) {
+                throw ValidationException::withMessages(['form' => ['Choose the role and whether to add or remove it.']]);
+            }
+            $add = $data['role_change'] === 'add';
+            $apply = function (User $u) use ($role, $add, $actor): void {
+                $this->staff->changeRole($u, $role, $add, $actor);
+            };
+            $summary = $add ? "Added the {$role->label()} role to {n}." : "Removed the {$role->label()} role from {n}.";
+        } else {
+            $action = $data['action'];
+            $apply = function (User $u) use ($action, $actor): void {
+                if ($action === 'delete') {
+                    $this->staff->delete($u, $actor);
+                } elseif ($action === 'disable') {
+                    if ($u->isDisabled()) {
+                        throw new InvalidArgumentException('Already disabled.');
+                    }
+                    $this->staff->disable($u, $actor);
+                } else {
+                    if (! $u->isDisabled()) {
+                        throw new InvalidArgumentException('Already enabled.');
+                    }
+                    $this->staff->enable($u, $actor);
+                }
+            };
+            $summary = match ($action) {
+                'delete' => 'Deleted {n}. Their history stays in the audit log.',
+                'disable' => 'Disabled {n} and signed them out everywhere.',
+                default => 'Re-enabled {n}.',
+            };
+        }
+
+        $users = User::query()->with(['roleAssignments', 'memberships'])->whereIn('id', $ids)->get();
+        $done = 0;
+        $skipped = [];
+        foreach ($users as $user) {
+            try {
+                $apply($user);
+                $done++;
+            } catch (InvalidArgumentException $e) {
+                $skipped[] = "{$user->email}: {$e->getMessage()}";
+            }
+        }
+        $missing = count($ids) - $users->count();
+        if ($missing > 0) {
+            $skipped[] = "{$missing} selected ".Str::plural('account', $missing).' no longer '.($missing === 1 ? 'exists' : 'exist').'.';
+        }
+
+        $message = str_replace('{n}', $done.' '.Str::plural('account', $done), $summary);
+
+        return $this->bulkResult($message, $skipped);
+    }
+
     public function revokeSessions(Request $request, User $user): RedirectResponse
     {
         $count = $this->staff->revokeSessions($user, $request->user());

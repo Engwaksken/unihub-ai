@@ -6,11 +6,38 @@
 @if ($page->isEmpty())
     <x-empty-state title="No jobs found" icon="queue"><p>No job matches these filters.</p></x-empty-state>
 @else
+    @php
+        $canBulkManage = \Illuminate\Support\Facades\Gate::allows('job.manage');
+        $canBulkDelete = \Illuminate\Support\Facades\Gate::allows('job.delete');
+        $bulk = $canBulkManage || $canBulkDelete;
+    @endphp
+    @if ($bulk)
+        <x-bulk-bar id="bulk-jobs" :action="route('jobs.bulk')" noun="jobs">
+            @if ($canBulkManage)
+                <x-bulk-dialog action="cancel" title="Cancel selected jobs" trigger-label="Cancel" confirm-label="Cancel jobs" confirm-class="btn btn-danger">
+                    <p class="dialog-body">Queued jobs are removed from the queue and will not run. Jobs that are already running or finished are skipped.</p>
+                </x-bulk-dialog>
+                <x-bulk-dialog action="retry" title="Retry selected jobs" trigger-label="Retry" confirm-label="Queue retries">
+                    <p class="dialog-body">Each failed job is queued again as a new job with the same input. Jobs that did not fail with a temporary error, or whose input is no longer retained, are skipped.</p>
+                    <div class="field">
+                        <label for="bulk-retry-reason">Reason (required, recorded in the audit log)</label>
+                        <textarea id="bulk-retry-reason" name="reason" rows="2" maxlength="200"></textarea>
+                    </div>
+                </x-bulk-dialog>
+            @endif
+            @if ($canBulkDelete)
+                <x-bulk-dialog action="delete" title="Delete selected jobs" trigger-label="Delete" trigger-class="btn btn-danger btn-sm" confirm-label="Delete jobs" confirm-class="btn btn-danger">
+                    <p class="dialog-body">Finished jobs (completed, failed, cancelled, expired) and their stored input and output are deleted for good. Queued and running jobs are skipped. Usage totals and the audit log are kept.</p>
+                </x-bulk-dialog>
+            @endif
+        </x-bulk-bar>
+    @endif
     <div class="table-wrap">
         <table class="table table-compact">
             <caption class="visually-hidden">Jobs (metadata only)</caption>
             <thead>
                 <tr>
+                    @if ($bulk)<th scope="col" class="col-check"><x-bulk-check form="bulk-jobs" label="Select all jobs on this page" /></th>@endif
                     <th scope="col">Job</th>
                     @if ($showProject)<th scope="col">Project</th>@endif
                     <th scope="col">Task / model</th>
@@ -31,6 +58,7 @@
                         $canOperate = \Illuminate\Support\Facades\Gate::allows('job.manage', $jobProject);
                     @endphp
                     <tr>
+                        @if ($bulk)<td class="col-check"><x-bulk-check form="bulk-jobs" :value="$job['id'] ?? ''" :label="'Select job '.($job['id'] ?? '')" /></td>@endif
                         <th scope="row"><code class="small">{{ $job['id'] ?? '' }}</code>
                             @if (! empty($job['retry_of'])) <span class="cell-sub">retry of {{ $job['retry_of'] }}</span> @endif
                             <span class="cell-sub">attempts {{ Fmt::int($job['attempts'] ?? null) }}</span></th>

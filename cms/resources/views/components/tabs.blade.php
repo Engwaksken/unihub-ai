@@ -10,6 +10,9 @@
     'bag' => 'default',
     // Tab to open first (e.g. from ?tab= after a filter form reloads the page); errors win.
     'active' => null,
+    // Query parameter that mirrors the open tab in the address bar (e.g. 'tab'), so a
+    // reload, a bookmark or a redirect back after saving lands on the same tab.
+    'query' => null,
 ])
 @php
     $keys = array_keys($tabs);
@@ -31,6 +34,7 @@
 <div {{ $attributes->except('aria-label')->merge(['class' => 'tabset']) }}
      x-data="{ tab: @js($initial), keys: @js($keys), jumped: false,
                go(i) { const k = this.keys[(i + this.keys.length) % this.keys.length]; this.tab = k; this.$nextTick(() => document.getElementById('{{ $name }}-tab-' + k).focus()); } }"
+     @if ($query) x-effect="const u = new URL(location.href); if (u.searchParams.get(@js($query)) !== tab) { u.searchParams.set(@js($query), tab); history.replaceState(history.state, '', u); }" @endif
      {{-- A required field on a hidden tab would block the submit with no visible message:
           open its tab first, then let the browser show its message there. --}}
      x-on:invalid.capture="if (jumped) return; jumped = true; setTimeout(() => jumped = false); const p = $event.target.closest('[role=tabpanel]'); if (p && p.id.startsWith('{{ $name }}-panel-')) { const k = p.id.slice({{ strlen($name.'-panel-') }}); if (tab !== k) { tab = k; $nextTick(() => $event.target.reportValidity()); } }">

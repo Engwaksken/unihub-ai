@@ -43,6 +43,7 @@ class PermissionMatrixTest extends TestCase
         'task.manage' => ['A', 'A', '-', '-'],
         'job.view' => ['A', 'A', 'S', 'S'],
         'job.manage' => ['A', 'A', 'S', '-'],
+        'job.delete' => ['A', 'A', '-', '-'],
         'usage.view' => ['A', 'A', 'S', 'S'],
         'health.view' => ['A', 'A', '-', 'A'],
         'alert.acknowledge' => ['A', 'A', '-', '-'],
