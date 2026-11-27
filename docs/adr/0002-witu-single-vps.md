@@ -20,7 +20,7 @@ The repository's CMS needs PHP ≥ 8.3. Its gateway (v2) needs PHP ≥ 8.4 and o
 ### W1. One PHP 8.4 FPM, installed beside 8.2
 - PHP 8.4 comes from packages.sury.org, Debian's standard PHP backport repository.
 - PHP 8.2 packages stay installed, and the default `php` CLI keeps pointing where it did.
-- Apache leaves mod_php (prefork) and uses `mpm_event` with `proxy_fcgi`, which saves memory and is required for FPM pools.
+- Apache keeps its current MPM and modules. The CMS vhost reaches PHP 8.4 FPM through `proxy_fcgi`, which works under any MPM, so co-hosted sites (Koha on `mpm_itk`, anything on mod_php 8.2) are unaffected. Switching to `mpm_event` would break Koha, so the kit never does it.
 - Each app gets its own pool, so no shared `www` pool runs:
   - `witu-cms`: ondemand, at most 6 workers
   - `witu-gateway`: phase B
@@ -84,7 +84,7 @@ CI's `cms-bundle` artifact (`unihub-cms-<sha>.zip`) is uploaded over MobaXterm S
 | Ollama with `qwen2.5:1.5b` loaded | ~1.6 GB |
 | MariaDB (256 MB buffer pool) | ~0.4 GB |
 | php8.4-fpm, CMS (≤ 6 workers) plus gateway (≤ 4) | ≤ 0.6 GB |
-| Apache event MPM | ~0.1 GB |
+| Apache (existing MPM, shared with Koha) | ~0.2 GB (measured 193 MB) |
 | FastAPI (until phase C) | ~0.1 GB |
 | OS and page cache | rest |
 

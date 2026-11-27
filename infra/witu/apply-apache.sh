@@ -40,23 +40,11 @@ echo "==> Backed up /etc/apache2 to $BK"
 
 trap 'echo "FAILED — rolling back"; restore "$BK"' ERR
 
-# mod_php (prefork) cannot coexist with mpm_event; PHP-FPM replaces it. Refuse if another
-# enabled site might still rely on mod_php.
-if apache2ctl -M 2>/dev/null | grep -q 'php_module'; then
-  others=""
-  for f in /etc/apache2/sites-enabled/*; do
-    n=$(basename "$f"); case "$n" in ai.witulibrary.org*|000-default*|'*') ;; *) others="$others $n" ;; esac
-  done
-  if [ -n "$others" ] && [ "${FORCE_MPM:-0}" != 1 ]; then
-    trap - ERR
-    echo "mod_php is enabled and these other sites are enabled: $others"
-    echo "Check they don't need mod_php, then re-run with: sudo FORCE_MPM=1 bash $0"
-    exit 1
-  fi
-  for f in /etc/apache2/mods-enabled/php*.load; do if [ -e "$f" ]; then a2dismod -q "$(basename "$f" .load)"; fi; done
-  a2dismod -q mpm_prefork || true
-  a2enmod -q mpm_event
-fi
+# The MPM and mod_php are left exactly as they are, so other sites on this host keep working
+# (Koha needs mpm_itk on prefork; others may use mod_php 8.2). PHP-FPM via proxy_fcgi works
+# under every MPM, and this vhost's own <FilesMatch> SetHandler sends its .php to the
+# witu-cms pool, overriding any server-wide mod_php handler.
+echo "==> MPM unchanged: $(apache2ctl -M 2>/dev/null | grep -o 'mpm_[a-z]*' | head -1)"
 a2enmod -q proxy proxy_http proxy_fcgi setenvif headers rewrite ssl
 # Debian's php8.x-fpm conf would hand ALL .php under any vhost to its default pool; we route explicitly.
 a2disconf -q php8.4-fpm 2>/dev/null || true

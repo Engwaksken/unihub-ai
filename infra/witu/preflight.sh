@@ -24,12 +24,15 @@ for s in ollama witu-ai-gateway mariadb apache2 php8.2-fpm php8.3-fpm php8.4-fpm
     rss=0; for p in $(cat "/sys/fs/cgroup$cg/cgroup.procs" 2>/dev/null || echo "$pids"); do r=$(awk '/VmRSS/{print $2}' "/proc/$p/status" 2>/dev/null); rss=$((rss + ${r:-0})); done
     printf '%-18s active   %6d MB\n' "$s" $((rss / 1024))
   else
-    printf '%-18s %s\n' "$s" "$(systemctl is-active "$s" 2>/dev/null || echo absent)"
+    st=$(systemctl is-active "$s" 2>/dev/null); printf '%-18s %s\n' "$s" "${st:-absent}"
   fi
 done
 
 section "Listening sockets (anything not on 127.0.0.1/::1 is public)"
-ss -ltnp 2>/dev/null | awk 'NR==1 || /:(22|80|443|3306|8000|8081|11434|9000)\b/'
+# Debian's awk is mawk, which has no \b word boundary: match "port then non-digit or end".
+ss -ltnp 2>/dev/null | awk 'NR==1 || /:(22|80|443|3306|8000|8081|11434|9000)([^0-9]|$)/'
+echo "-- other public listeners (should be none):"
+ss -ltnH 2>/dev/null | awk '$4 !~ /^(127\.|\[::1\]|::1)/ && $4 !~ /:(22|80|443)$/ {print "  " $4; n++} END {if (!n) print "  none"}'
 
 section "Firewall"
 (have ufw && ufw status verbose) || (have nft && nft list ruleset 2>/dev/null | head -40) || echo "no ufw/nft found"
@@ -45,12 +48,14 @@ for p in /usr/bin/php8.3 /usr/bin/php8.4; do
   echo "$p missing:${miss:- none}"
 done
 ls /etc/apt/sources.list.d/ 2>/dev/null; grep -rl "packages.sury.org" /etc/apt/ 2>/dev/null || echo "sury PHP repo: not configured"
-have composer && composer --version 2>/dev/null | head -1 || echo "composer: not installed"
+# As root, Composer asks "Continue as root/super user [yes]?" and would wait forever.
+have composer && COMPOSER_ALLOW_SUPERUSER=1 composer --no-interaction --version </dev/null 2>/dev/null | head -1 || echo "composer: not installed"
 have node && echo "node $(node --version)" || echo "node: not installed (fine: assets are built by CI/locally)"
 
 section "Apache"
 apache2ctl -v 2>/dev/null | head -1
-apache2ctl -M 2>/dev/null | grep -E 'mpm_|php|proxy|rewrite|headers|ssl|setenvif' | sort
+apache2ctl -M 2>/dev/null | grep -E 'mpm_|php|proxy|rewrite|headers|ssl|setenvif|cgi' | sort
+[ -d /etc/koha ] && { echo "Koha present (needs mpm_itk; the WITU kit never changes the MPM):"; ls /etc/koha/sites 2>/dev/null | sed 's/^/  koha instance: /'; }
 ls -l /etc/apache2/sites-enabled/
 apache2ctl -S 2>&1 | head -30
 grep -nE 'DocumentRoot|ServerName|ServerAlias|ProxyPass|SSLCertificate|Include' /etc/apache2/sites-available/ai.witulibrary.org*.conf 2>/dev/null

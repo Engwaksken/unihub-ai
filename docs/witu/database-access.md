@@ -33,7 +33,7 @@ This puts no extra software on the VPS and uses no RAM there.
 
 ## 3. Option B: phpMyAdmin, localhost-only, through a tunnel
 
-Do not install the Debian `phpmyadmin` package. It pulls in PHP 8.2 Apache modules that conflict with the event MPM and FPM setup (ADR 0002 W1).
+Do not install the Debian `phpmyadmin` package. It pulls in PHP 8.2 Apache modules that are not needed alongside the FPM setup (ADR 0002 W1).
 
 ### Install
 

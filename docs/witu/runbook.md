@@ -201,7 +201,7 @@ Syntax OK
 /v1/health   200
 ```
 
-If mod_php was enabled with other sites, the script stops and names them. Check them, then re-run with `sudo FORCE_MPM=1 bash …`.
+The script never changes the Apache MPM or disables mod_php, so other sites on the server (Koha, anything on PHP 8.2) keep working. It prints the MPM it found; `MPM unchanged: mpm_itk` or `mpm_prefork` is normal here.
 
 **Instant undo:**
 ```bash
