@@ -26,6 +26,9 @@ usermod -aG "$GW_USER" "$DEPLOY_USER"
 
 log "Directories"
 install -d -m 750 -o "$DEPLOY_USER" -g "$GW_USER" "$GW_APP"
+# Apache (www-data) must pass through to public/ (o+x, no listing). install -d resets the
+# mode on every run, and a missing o+x makes Apache answer 403 to every gateway request.
+chmod o+x "$GW_APP"
 install -d -m 2770 -o "$GW_USER" -g "$GW_USER" "$GW_DATA"
 [ -f "$GW_DB" ] || install -m 660 -o "$GW_USER" -g "$GW_USER" /dev/null "$GW_DB"
 install -d -m 755 /etc/witu-gateway
@@ -111,5 +114,14 @@ else
   echo "no $CERT (or setfacl missing): certificate expiry will show as Unknown"
 fi
 
-echo
-echo "Done. Next: sudo witu-deploy-gateway origin/main   (runbook phase B, step B3)"
+if [ -f "$GW_APP/vendor/autoload.php" ]; then
+  log "Check: the deployed gateway still answers through Apache"
+  code=$(gw_probe)
+  echo "GET $GW_URL/summary without credentials -> $code (expected 401)"
+  [ "$code" = 401 ] || die "the gateway does not answer through Apache (HTTP $code): check 'ls -ld $GW_APP' shows o+x and /var/log/apache2/witu-gateway-error.log"
+  echo
+  echo "Done."
+else
+  echo
+  echo "Done. Next: sudo witu-deploy-gateway origin/main   (runbook phase B, step B3)"
+fi

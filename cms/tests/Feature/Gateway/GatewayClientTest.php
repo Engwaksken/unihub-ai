@@ -116,6 +116,22 @@ class GatewayClientTest extends TestCase
         }
     }
 
+    public function test_web_server_error_page_counts_as_unreachable_not_forbidden(): void
+    {
+        // Apache's own 403 page (it could not read the gateway's folder) is not a gateway answer.
+        Http::fake([self::GATEWAY.'/*' => Http::response('<html><title>403 Forbidden</title></html>', 403, ['Content-Type' => 'text/html'])]);
+
+        try {
+            $this->client()->listProjects();
+            $this->fail('expected an exception');
+        } catch (GatewayUnavailableException $e) {
+            $this->assertSame('NOT_GATEWAY', $e->errorCode);
+            $this->assertSame(403, $e->status);
+        }
+
+        $this->actingAs(User::factory()->owner()->create())->get('/organizations')->assertOk()->assertSee('Gateway unreachable');
+    }
+
     public function test_error_codes_map_to_typed_exceptions(): void
     {
         $id = (string) Str::uuid();
