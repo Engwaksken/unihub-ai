@@ -55,7 +55,7 @@ class HealthTest extends TestCase
 
         $this->actingAs(User::factory()->opsAdmin()->create())->get('/health')->assertOk()
             ->assertSee('37.5%')->assertSee('71.2%')->assertSee('2,777 of 3,900 MB')->assertSee('OK')
-            ->assertSee('Loaded')->assertSee('days left')
+            ->assertSee('Model loaded')->assertSee('qwen2.5:1.5b is in memory')->assertSee('days left')
             ->assertSee('w-1')->assertSee('Running a job')
             ->assertSee('ram_high')->assertSee('RAM usage 91%')->assertSee('Acknowledge')
             ->assertSee('data-chart=', false)->assertSee('Pause admission');

@@ -8,7 +8,9 @@
 @php
     $idPrefix ??= '';
     $useOld ??= true;
+    $section ??= 'all'; // 'roles' | 'projects' | 'all' (tabbed forms include it once per tab)
 @endphp
+@if ($section !== 'projects')
 <fieldset class="fieldset">
     <legend>Roles</legend>
     <div class="checkbox-list">
@@ -31,7 +33,8 @@
     </div>
     @error('roles') <p class="field-error">{{ $message }}</p> @enderror
 </fieldset>
-
+@endif
+@if ($section !== 'roles')
 <fieldset class="fieldset">
     <legend>Project assignments</legend>
     <p class="field-help">Project managers and auditors only see the projects assigned here. Owners and ops admins see every project.</p>
@@ -85,3 +88,4 @@
     @endif
     @error('memberships') <p class="field-error">{{ $message }}</p> @enderror
 </fieldset>
+@endif
