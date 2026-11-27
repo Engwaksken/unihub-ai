@@ -40,6 +40,16 @@
                 <div class="form-actions"><button type="submit" class="btn btn-primary">Save portal settings</button></div>
             @endif
         </form>
+
+        <div class="details-inline">
+            <h3 class="small">E-mail delivery</h3>
+            <p class="muted small">Invitations, password resets and alerts are sent through <code>{{ config('mail.mailers.'.config('mail.default').'.host') ?: config('mail.default') }}</code> as <code>{{ config('mail.from.address') }}</code>. Send yourself a test to check the mail settings.</p>
+            <x-form-errors bag="mailTest" />
+            <form method="POST" action="{{ route('settings.test-mail') }}">
+                @csrf
+                <button type="submit" class="btn btn-secondary">Send test e-mail to {{ auth()->user()->email }}</button>
+            </form>
+        </div>
     </section>
 
     @can('settings.view')

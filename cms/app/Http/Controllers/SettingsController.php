@@ -5,13 +5,17 @@ namespace App\Http\Controllers;
 use App\Gateway\Exceptions\GatewayAuthenticationException;
 use App\Gateway\Exceptions\GatewayUnavailableException;
 use App\Services\CmsSettings;
+use App\Support\Audit;
 use DateTimeZone;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 /**
  * Settings: gateway policy settings (GET/PATCH /settings, editing owner-only)
@@ -143,6 +147,33 @@ class SettingsController extends Controller
         ], $request->user());
 
         return redirect()->route('settings.index')->with('status', 'Portal settings saved.');
+    }
+
+    /**
+     * Send a test e-mail to the signed-in owner with the live MAIL_* settings and
+     * report the mail server's own answer, so a wrong host, port or password is
+     * visible without inviting anyone.
+     */
+    public function testMail(Request $request): RedirectResponse
+    {
+        abort_unless(Gate::allows('settings.cms'), 403);
+        $to = $request->user()->email;
+        $from = (string) config('mail.from.address');
+
+        try {
+            Mail::raw(
+                'This is a test message from the '.config('app.name')." staff portal.\n\nIf you can read it, staff invitations and alert e-mails can be delivered.",
+                fn ($m) => $m->to($to)->subject(config('app.name').' test e-mail'),
+            );
+        } catch (TransportExceptionInterface $e) {
+            Log::warning('Test e-mail failed.', ['error' => $e->getMessage()]);
+            Audit::record('settings.test_mail', actor: $request->user(), metadata: ['ok' => false, 'error' => mb_substr($e->getMessage(), 0, 200)]);
+
+            return back()->withErrors(['mail' => 'The mail server did not accept the message: '.mb_substr($e->getMessage(), 0, 300)], 'mailTest');
+        }
+        Audit::record('settings.test_mail', actor: $request->user(), metadata: ['ok' => true]);
+
+        return back()->with('status', "Test e-mail sent to {$to} from {$from}. If it does not arrive within a few minutes, check the spam folder and the sender's SPF/DKIM records.");
     }
 
     private static function fieldType(string $key): string
