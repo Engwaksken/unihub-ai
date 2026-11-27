@@ -31,7 +31,15 @@ if ! grep -rqs "packages.sury.org/php" /etc/apt/sources.list /etc/apt/sources.li
 else
   echo "already configured"
 fi
+# The existing PHP 8.2 (mod_php for the other sites on this host) must stay on Debian's own
+# packages: without this pin, sury's newer 8.2 builds would replace them on the next upgrade.
+cat > /etc/apt/preferences.d/witu-php82-debian <<'PIN'
+Package: php8.2* libapache2-mod-php8.2
+Pin: release o=Debian
+Pin-Priority: 990
+PIN
 apt-get update -q
+echo "php8.2 candidate stays on Debian: $(apt-cache policy libapache2-mod-php8.2 2>/dev/null | awk '/Candidate/{print $2}')"
 
 echo "==> PHP $PHPV packages"
 apt-get install -y -q --no-install-recommends \
@@ -49,7 +57,9 @@ done
 echo "all required extensions present"
 
 echo "==> Composer (installer signature verified)"
-if ! command -v composer >/dev/null 2>&1; then
+# Our own copy at /usr/local/bin, run with php8.4 by the deploy. An older system Composer
+# (Debian's /usr/bin/composer, 2.5.x on this host) is left in place for whoever uses it.
+if [ ! -x /usr/local/bin/composer ]; then
   EXPECTED=$(curl -fsSL https://composer.github.io/installer.sig)
   curl -fsSLo /tmp/composer-setup.php https://getcomposer.org/installer
   ACTUAL=$(/usr/bin/php$PHPV -r "echo hash_file('sha384', '/tmp/composer-setup.php');")
