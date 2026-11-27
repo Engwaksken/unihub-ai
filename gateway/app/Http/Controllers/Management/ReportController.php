@@ -83,23 +83,32 @@ class ReportController extends ManagementController
         $this->actor($request)->authorize('usage.view');
         [$from, $to] = $this->range($request);
         $q = $this->validate($request->query(), [
-            'group_by' => 'nullable|in:day,project,model',
+            'group_by' => 'nullable|in:'.implode(',', Reporting::GROUPS),
             'format' => 'nullable|in:json,csv',
+            'organization_id' => 'nullable|uuid',
+            'api_key_id' => 'nullable|uuid',
+            'model' => 'nullable|string|max:120',
         ]);
         $groupBy = $q['group_by'] ?? 'day';
         $offset = self::offsetMinutes($this->timezone($request));
-        $rows = $reporting->usage($from, $to, $this->projectScope($request, 'usage.view'), $groupBy, $offset);
+        // Filters only narrow the actor's project scope, so an id outside it simply matches nothing.
+        $filters = array_filter([
+            'organization_id' => isset($q['organization_id']) ? strtolower($q['organization_id']) : null,
+            'api_key_id' => isset($q['api_key_id']) ? strtolower($q['api_key_id']) : null,
+            'model' => $q['model'] ?? null,
+        ], fn ($v) => $v !== null);
+        $rows = $reporting->usage($from, $to, $this->projectScope($request, 'usage.view'), $groupBy, $offset, $filters);
 
         if (($q['format'] ?? 'json') === 'csv') {
-            $this->audit($request, 'usage.exported', 'usage', null, $request->query('project_id'), ['group_by' => $groupBy, 'from' => BaseModel::iso($from), 'to' => BaseModel::iso($to)]);
+            $this->audit($request, 'usage.exported', 'usage', null, $request->query('project_id'), ['group_by' => $groupBy, 'from' => BaseModel::iso($from), 'to' => BaseModel::iso($to)] + $filters);
 
             return Csv::download("usage-{$groupBy}-{$from->format('Ymd')}-{$to->format('Ymd')}.csv",
-                ['key', 'project_slug', 'project_name', 'requests', 'completed', 'failed', 'failure_rate', 'tokens_in', 'tokens_out',
+                ['key', 'label', 'project_slug', 'project_name', 'requests', 'completed', 'failed', 'failure_rate', 'tokens_in', 'tokens_out',
                     'p50_queue_ms', 'p95_queue_ms', 'p50_inference_ms', 'p95_inference_ms', 'p95_total_ms', 'inference_ms_sum', 'est_cost_usd'], $rows);
         }
 
         return new JsonResponse(['data' => $rows, 'meta' => [
-            'from' => BaseModel::iso($from), 'to' => BaseModel::iso($to), 'group_by' => $groupBy,
+            'from' => BaseModel::iso($from), 'to' => BaseModel::iso($to), 'group_by' => $groupBy, 'filters' => (object) $filters,
             'cost_note' => 'Estimate: hosting cost for the period allocated by share of inference time.',
         ]]);
     }

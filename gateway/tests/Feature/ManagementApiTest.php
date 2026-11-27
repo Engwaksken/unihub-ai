@@ -376,6 +376,51 @@ class ManagementApiTest extends TestCase
         $this->assertNull($health['cpu_pct']); // not measured → unknown
     }
 
+    public function test_usage_filters_by_organization_key_and_model_and_groups_by_period(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-27T10:00:00Z'));
+        Http::fake(['*' => Http::response(['message' => ['content' => 'ok'], 'prompt_eval_count' => 10, 'eval_count' => 5])]);
+        $otherOrg = Organization::create(['name' => 'BOQ Ltd', 'status' => 'active']);
+        [$a, $keyA] = $this->projectWithKey(['name' => 'Alpha']);
+        [$b, $keyB] = $this->projectWithKey(['name' => 'Beta', 'organization_id' => $otherOrg->id]);
+        $this->submit($keyA);
+        $this->submit($keyA);
+        $this->submit($keyB);
+        Artisan::call('gateway:work', ['--stop-when-empty' => true]);
+        $keyAId = ApiKey::where('project_id', $a->id)->value('id');
+        $range = 'from=2026-11-01T00:00:00Z&to=2026-11-28T00:00:00Z';
+
+        $byOrg = $this->mgmt('GET', "/usage?{$range}&group_by=organization")->assertOk()->json('data');
+        $this->assertSame(['BOQ Ltd', 'Unihub Solutions'], array_column($byOrg, 'label'));
+        $this->assertSame([1, 2], array_column($byOrg, 'requests'));
+
+        $org = $this->mgmt('GET', "/usage?{$range}&group_by=project&organization_id={$otherOrg->id}")->json('data');
+        $this->assertSame(['Beta'], array_column($org, 'label'));
+
+        $byKey = $this->mgmt('GET', "/usage?{$range}&group_by=key&api_key_id={$keyAId}")->assertOk()->json('data');
+        $this->assertCount(1, $byKey);
+        $this->assertSame($keyAId, $byKey[0]['key']);
+        $this->assertSame('Key ('.ApiKey::find($keyAId)->prefix.')', $byKey[0]['label']); // unlabelled key: prefix only
+        $this->assertSame(2, $byKey[0]['requests']);
+
+        $this->assertSame(3, $this->mgmt('GET', "/usage?{$range}&group_by=model&model=qwen2.5:1.5b")->json('data.0.requests'));
+        $this->assertSame([], $this->mgmt('GET', "/usage?{$range}&model=no-such-model")->json('data'));
+
+        $this->assertSame('2026-W48', $this->mgmt('GET', "/usage?{$range}&group_by=week")->json('data.0.key'));
+        $this->assertSame('2026-11', $this->mgmt('GET', "/usage?{$range}&group_by=month")->json('data.0.key'));
+
+        // Filters only narrow scope: a PM of Alpha filtering by Beta's org sees nothing, not Beta.
+        $this->assertSame([], $this->mgmt('GET', "/usage?{$range}&organization_id={$otherOrg->id}", [], ['project_manager'], [$a->id])->json('data'));
+        $this->mgmt('GET', "/usage?{$range}&api_key_id=nope")->assertStatus(422);
+        $this->mgmt('GET', "/usage?{$range}&group_by=hour")->assertStatus(422);
+
+        $csv = $this->mgmt('GET', "/usage?{$range}&group_by=key&api_key_id={$keyAId}&format=csv")->assertOk()->streamedContent();
+        $this->assertStringStartsWith('key,label,', $csv);
+        $this->assertSame(2, substr_count(trim($csv), "\n") + 1); // header + the one key
+        $exported = AuditEvent::where('action', 'usage.exported')->firstOrFail()->toApi();
+        $this->assertSame($keyAId, $exported['metadata']['api_key_id']); // the export's filters are audited
+    }
+
     public function test_summary_today_and_trend_follow_tz(): void
     {
         // 22:30 UTC on 26 Nov is 01:30 on 27 Nov in Nairobi (UTC+3).

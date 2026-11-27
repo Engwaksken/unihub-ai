@@ -33,4 +33,4 @@ This phase runs after the FastAPI source has been reviewed (`audit.md` §5).
 
 ## Open issues
 
-- Audit gaps G2–G7 (`audit.md` §3). G11 and G14 are implemented in code and go live with phase B.
+- Audit gaps G2–G6 (`audit.md` §3). G7, G11 and G14 are implemented in code and go live with phase B.

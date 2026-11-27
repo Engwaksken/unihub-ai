@@ -141,9 +141,9 @@ paths:
       responses: { '201': { description: New job }, '409': { $ref: '#/components/responses/Error' } }
   /usage:
     get:
-      summary: Aggregates by day/project/model; format=csv for export (scoped)
-      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' }, { $ref: '#/components/parameters/Tz' }, { name: group_by, in: query, schema: { type: string, enum: [day, project, model] } }, { name: format, in: query, schema: { type: string, enum: [json, csv] } } ]
-      responses: { '200': { description: "Rows with key, requests, completed, failed, failure_rate, tokens_in, tokens_out, p50/p95 queue_ms and inference_ms, p95_total_ms, inference_ms_sum, est_cost_usd" } }
+      summary: "Aggregates by day/week/month/organization/project/key/model, filterable by organization, key and model (filters only narrow the actor's scope); format=csv for export"
+      parameters: [ { $ref: '#/components/parameters/From' }, { $ref: '#/components/parameters/To' }, { $ref: '#/components/parameters/ProjectFilter' }, { $ref: '#/components/parameters/Tz' }, { name: group_by, in: query, schema: { type: string, enum: [day, week, month, organization, project, key, model] } }, { name: organization_id, in: query, schema: { type: string, format: uuid } }, { name: api_key_id, in: query, schema: { type: string, format: uuid } }, { name: model, in: query, schema: { type: string, maxLength: 120 } }, { name: format, in: query, schema: { type: string, enum: [json, csv] } } ]
+      responses: { '200': { description: "Rows with key, label (display name), requests, completed, failed, failure_rate, tokens_in, tokens_out, p50/p95 queue_ms and inference_ms, p95_total_ms, inference_ms_sum, est_cost_usd" } }
   /health:
     get: { summary: "Latest host/worker/Ollama/TLS telemetry with sampled_at and stale flag; swap (total/used MB, used %, null when no swap) and services [{name, status}] from systemctl", responses: { '200': { description: OK } } }
   /admission:

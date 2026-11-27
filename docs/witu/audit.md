@@ -51,7 +51,7 @@
 | G4 | AI playground (`/playground`) | Missing | Phase C. A management-API endpoint runs a prompt through the queue under a dedicated *playground* project, so the CMS never holds an app key. |
 | G5 | PDF and Excel usage exports | Partial: CSV only | Phase C (XLSX via PhpSpreadsheet or OpenSpout, PDF via dompdf), after a memory check. |
 | G6 | Branding: logo, favicon, appearance | Partial: text branding only | Phase C. Uploads go to `storage/app`, and are covered by the backups. |
-| G7 | Daily, weekly and monthly reports filtered by org, project, key and model | Partial: day/project/model grouping with custom ranges; no per-key or org filter | Phase C (gateway `/usage` filters). |
+| G7 | Daily, weekly and monthly reports filtered by org, project, key and model | **Done** (2026-11-27); live with phase B | Gateway `/usage`: `group_by` day/week (ISO)/month/organization/project/key/model, filters `organization_id`, `api_key_id`, `model` that only narrow the actor's scope, a `label` per row, filters recorded on CSV export audit. CMS Usage page and project Usage tab: the new groupings and filter drop-downs (keys once a project is chosen and the user has `key.view`). |
 | G8 | URL names `/dashboard`, `/api-keys` | Done in this change: redirects to `/` → Overview and to `/keys` | `cms/routes/web.php`, `UrlAliasTest` |
 | G9 | `/health` → FastAPI | **Conflict:** `/health` is the CMS *Server & alerts* page | FastAPI health is published at **`/v1/health`** instead (ADR 0002 §Routing). |
 | G10 | Inference settings from the brief (30 s queue wait, 8 waiting, 256 max output) | Ops | Set them in CMS → Settings once gateway v2 is connected. Defaults today are 120 s and 8; max output is already 256. |
