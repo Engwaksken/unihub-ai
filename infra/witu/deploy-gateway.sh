@@ -52,7 +52,13 @@ as_deploy rsync -a --delete --exclude=/vendor/ --exclude=/.env --exclude=/storag
 (cd "$GW_STAGE" && as_deploy env COMPOSER_NO_INTERACTION=1 "$PHP" "$COMPOSER" install --no-dev --prefer-dist \
   --optimize-autoloader --no-progress --quiet)
 as_deploy "$PHP" "$COMPOSER" audit --no-dev --locked --working-dir="$GW_STAGE" || die "composer audit reported vulnerable packages"
+# rsync -a copies owner, group and mode from the git checkout (group witu-deploy), so the
+# app user could not read the stage. Give it group read for the migration review below.
+chgrp -R "$GW_USER" "$GW_STAGE"
 chmod -R g+rX "$GW_STAGE"
+mkdir -p "$GW_STAGE"/storage/{logs,framework/cache/data} "$GW_STAGE/bootstrap/cache"
+chgrp -R "$GW_USER" "$GW_STAGE/storage" "$GW_STAGE/bootstrap/cache"
+chmod -R g+rwX "$GW_STAGE/storage" "$GW_STAGE/bootstrap/cache"
 
 log "Reviewing database migrations"
 # Run as the app user: SQLite in WAL mode writes -wal/-shm files next to the database,
