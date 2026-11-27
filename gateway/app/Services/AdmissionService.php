@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AiModel;
 use App\Models\ApiKey;
 use App\Models\BaseModel;
 use App\Models\Job;
@@ -26,14 +27,24 @@ class AdmissionService
     ) {}
 
     /**
-     * @param  array{task: string, input: string, max_tokens: int, idempotency_key: string}  $req
+     * Optional (OpenAI-compatible chat, phase C): input_kind ('text'|'chat'; chat input is
+     * JSON {"messages": [...]}), model (an enabled model tag instead of the task version's),
+     * estimate_text (the text to budget tokens for, when input is not plain text).
+     *
+     * @param  array{task: string, input: string, max_tokens: int, idempotency_key: string, input_kind?: string, model?: ?string, estimate_text?: string}  $req
      * @return array{0: Job, 1: bool} [job, replayed]
      */
     public function submit(ApiKey $key, array $req): array
     {
-        $inputHash = hash('sha256', json_encode([$req['task'], $req['input'], $req['max_tokens']], JSON_UNESCAPED_UNICODE));
+        $kind = $req['input_kind'] ?? Job::INPUT_TEXT;
+        $hashed = [$req['task'], $req['input'], $req['max_tokens']];
+        if ($kind !== Job::INPUT_TEXT || ! empty($req['model'])) {
+            $hashed[] = $kind;
+            $hashed[] = $req['model'] ?? null;
+        }
+        $inputHash = hash('sha256', json_encode($hashed, JSON_UNESCAPED_UNICODE));
 
-        return DB::transaction(function () use ($key, $req, $inputHash) {
+        return DB::transaction(function () use ($key, $req, $inputHash, $kind) {
             $project = $key->project()->first();
             $now = CarbonImmutable::now('UTC');
 
@@ -64,13 +75,21 @@ class AdmissionService
             }
             $version = $task->currentVersion();
             $model = $version?->model;
+            if ($version !== null && ! empty($req['model']) && $req['model'] !== $model?->tag) {
+                $model = AiModel::where('tag', $req['model'])->first();
+                if ($model === null || ! $model->enabled || ! $model->installed) {
+                    throw new ApiException('MODEL_NOT_FOUND', 404, "Model '{$req['model']}' is not available on this gateway", [
+                        'available' => AiModel::where('enabled', true)->where('installed', true)->orderBy('tag')->pluck('tag')->all(),
+                    ]);
+                }
+            }
             if ($version === null || $model === null || ! $model->enabled || ! $model->installed) {
                 throw new ApiException('SERVICE_UNAVAILABLE', 503, 'Task is not currently available', [], 300);
             }
 
             // 3. Token budget — reject, never truncate.
             $maxTokens = min($req['max_tokens'], $version->output_cap, $this->settings->int('max_output_tokens'));
-            $estInput = $this->estimator->estimate($version->system_template, $req['input']);
+            $estInput = $this->estimator->estimate($version->system_template, $req['estimate_text'] ?? $req['input']);
             $numCtx = (int) config('gateway.ollama.num_ctx');
             if ($estInput + $maxTokens > $numCtx) {
                 throw new ApiException('TOKEN_BUDGET', 422, 'Input too long for the context budget', [
@@ -110,6 +129,7 @@ class AdmissionService
                 'task_version_id' => $version->id,
                 'model_id' => $model->id,
                 'state' => Job::QUEUED,
+                'input_kind' => $kind,
                 'idem_key' => $req['idempotency_key'],
                 'input_hash' => $inputHash,
                 'max_tokens' => $maxTokens,

@@ -57,7 +57,7 @@ trap - ERR
 
 echo "==> Smoke test"
 sleep 1
-for u in / /login /up /v1/health; do
+for u in / /login /up /v1/health /gw/v1/models; do
   printf '%-12s %s\n' "$u" "$(curl -s -o /dev/null -m 15 -w '%{http_code}' "https://ai.witulibrary.org$u")"
 done
-echo "Expected: / 302, /login 200, /up 200, /v1/health 200. If not: sudo bash $0 --restore $BK"
+echo "Expected: / 302, /login 200, /up 200, /v1/health 200, /gw/v1/models 401 (gateway v2 up, no key sent; 503 or 404 = gateway not installed yet). If / /login /up /v1/health differ: sudo bash $0 --restore $BK"

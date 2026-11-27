@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $error_code
  * @property string|null $error_message
  * @property bool $error_transient
+ * @property string $input_kind
  * @property int|null $tokens_in
  * @property int|null $tokens_out
  * @property string|null $retry_of
@@ -54,6 +55,10 @@ class Job extends BaseModel
     public const EXPIRED = 'expired';
 
     public const STATES = [self::QUEUED, self::RUNNING, self::COMPLETED, self::FAILED, self::CANCELLED, self::EXPIRED];
+
+    public const INPUT_TEXT = 'text';
+
+    public const INPUT_CHAT = 'chat';
 
     public const TERMINAL = [self::COMPLETED, self::FAILED, self::CANCELLED, self::EXPIRED];
 
@@ -118,6 +123,7 @@ class Job extends BaseModel
             'tokens_out' => $this->tokens_out,
             'error_code' => $this->error_code,
             'error_transient' => $this->error_code === null ? null : (bool) $this->error_transient,
+            'input_kind' => $this->input_kind ?? self::INPUT_TEXT,
             'retry_of' => $this->retry_of,
             'request_id' => $this->request_id,
             'queued_at' => self::iso($this->queued_at),

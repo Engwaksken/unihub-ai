@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\JobController;
+use App\Http\Controllers\Api\OpenAiController;
 use App\Http\Middleware\AuthenticateProjectKey;
 use Illuminate\Support\Facades\Route;
 
@@ -11,4 +12,8 @@ Route::prefix('v1')->middleware([AuthenticateProjectKey::class, 'throttle:projec
     Route::post('/jobs', [JobController::class, 'store']);
     Route::get('/jobs/{id}', [JobController::class, 'show']);
     Route::delete('/jobs/{id}', [JobController::class, 'destroy']);
+
+    // OpenAI-compatible (phase C): same keys, quotas, queue and usage as /v1/jobs.
+    Route::get('/models', [OpenAiController::class, 'models']);
+    Route::post('/chat/completions', [OpenAiController::class, 'chatCompletions']);
 });

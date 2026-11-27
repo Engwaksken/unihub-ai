@@ -303,6 +303,56 @@ Rollback: the deploy restores the previous code automatically if its health chec
 
 ---
 
+# Phase C: apps use gateway v2 (OpenAI-compatible, keys from the CMS)
+
+Gateway v2 answers OpenAI-style requests at **`https://ai.witulibrary.org/gw/v1`** (`/models`, `/chat/completions`, plus `/jobs`). FastAPI keeps `/v1` until every app has moved; then `/v1` is switched over (step C6).
+
+How a request runs: the project key is checked, the project must be allowed the task **`chat`**, whose published system template is always sent first, then the app's messages. Quotas, the single worker queue and usage reports apply as for any job. The request waits for the answer up to the **Chat API wait** setting (default 85 s).
+
+## Step C1: Deploy
+
+```bash
+witu-deploy-cms origin/main
+sudo -u witu-deploy git -C /var/www/witu-ai-source checkout --detach origin/main
+bash /var/www/witu-ai-source/infra/witu/install-gateway.sh        # adds the public PHP pool and the loopback site on 127.0.0.1:8082
+witu-deploy-gateway origin/main                                   # prints one ALTER TABLE (jobs.input_kind); then:
+witu-deploy-gateway origin/main --migrate
+bash /var/www/witu-ai-source/infra/witu/apply-apache.sh            # adds /gw/v1 to ai.witulibrary.org (Apache restarts, 1-2 s)
+```
+
+**Expected:** `listening on 127.0.0.1:8082 (loopback only)`; the Apache smoke test shows `/gw/v1/models 401` (gateway reachable, no key sent).
+
+## Step C2: The `chat` task (CMS → Models & tasks → Tasks)
+
+**New task or version**: key `chat`, model `qwen2.5:1.5b`, output cap `256`, format Text, and a system template such as:
+
+> You are the WITU AI assistant. Answer clearly and briefly. If you are not sure, say so.
+
+Then **Publish** the version. Apps add their own system prompt after this one.
+
+## Step C3: The app's project and key
+
+1. **Projects → (project) → Settings:** add `chat` to *Allowed tasks*. Check its quotas (requests per day and per minute).
+2. **API keys → Issue key.** Copy it once, straight into the app's settings.
+
+## Step C4: Point the app at it (Elevate Her)
+
+Elevate Her → AI settings: **Provider** *Custom (OpenAI-compatible)*, **Endpoint** `https://ai.witulibrary.org/gw/v1`, **Model** `qwen2.5:1.5b`, **API key** from step C3. **Test connection** should answer with a one-sentence tip.
+
+## Step C5: Check
+
+```bash
+curl -s https://ai.witulibrary.org/gw/v1/models -H "Authorization: Bearer <key>"     # type the key here, never paste it into chat or docs
+```
+
+CMS **Jobs** shows the request (kind `chat`), **Usage** counts it per project, key and model.
+
+## Step C6: Final cut-over of `/v1` (later, when FastAPI has no users)
+
+Point `/v1/` in `infra/witu/apache/ai.witulibrary.org-le-ssl.conf` at `http://127.0.0.1:8082/v1/`, run `apply-apache.sh`, and stop FastAPI (`systemctl disable --now witu-ai-gateway`), keeping it installed for 14 days as a rollback.
+
+---
+
 ## Routine deploys (after phase A)
 
 ### One-time: let the server download CI bundles itself

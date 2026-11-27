@@ -21,6 +21,7 @@ class Settings
         'max_output_tokens' => 'integer|min:1|max:1024',
         'queue_wait_max_seconds' => 'integer|min:10|max:3600',
         'inference_deadline_seconds' => 'integer|min:10|max:600',
+        'sync_wait_seconds' => 'integer|min:10|max:170',
         'result_ttl_hours' => 'integer|min:1|max:24',
         'metadata_retention_days' => 'integer|min:1|max:365',
         'key_rotation_overlap_days' => 'integer|min:0|max:30',
